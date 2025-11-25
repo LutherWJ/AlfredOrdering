@@ -143,12 +143,11 @@ const menuSchema = new mongoose.Schema({
 });
 
 // Update updated_at on save
-menuSchema.pre('save', function(next) {
-    this.updated_at = Date.now();
-    next();
+menuSchema.pre('save', function() {
+    this.updated_at = new Date();
 });
 
 // Index for quick restaurant lookup
 menuSchema.index({ restaurant_id: 1 });
 
-export default mongoose.model('Menu', menuSchema);
+export default mongoose.model('Menus', menuSchema);

@@ -107,7 +107,7 @@ const orderSchema = new mongoose.Schema({
         type: [orderItemSchema],
         required: true,
         validate: {
-            validator: function(items) {
+            validator: function(items: any[]) {
                 return items.length > 0;
             },
             message: 'Order must contain at least one item'
@@ -170,9 +170,8 @@ const orderSchema = new mongoose.Schema({
 });
 
 // Update updated_at on save
-orderSchema.pre('save', function(next) {
-    this.updated_at = Date.now();
-    next();
+orderSchema.pre('save', function() {
+    this.updated_at = new Date();
 });
 
 // Indexes for common queries
@@ -181,4 +180,4 @@ orderSchema.index({ 'customer.customer_id': 1, created_at: -1 }); // Customer or
 orderSchema.index({ status: 1, created_at: -1 }); // Kitchen display (pending/preparing orders)
 orderSchema.index({ created_at: -1 }); // Recent orders
 
-export default mongoose.model('Order', orderSchema);
+export default mongoose.model('Orders', orderSchema);

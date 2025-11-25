@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import menu from "./routes/menu.ts";
+import order from "./routes/order.ts";
+import customer from "./routes/customer.ts";
 import connectDB from './config/connection';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,14 +21,6 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', message: 'Alfred Ordering API is running' });
 });
 
-// API routes will be added here
-// app.use('/api/auth', authRoutes);
-// app.use('/api/users', userRoutes);
-// app.use('/api/vendors', vendorRoutes);
-// app.use('/api/menu', menuRoutes);
-// app.use('/api/orders', orderRoutes);
-// app.use('/api/categories', categoryRoutes);
-
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error(err.stack);
@@ -39,6 +31,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
         }
     });
 });
+
+
+// API routes
+app.use('/api/menu', menu);
+app.use('/api/order', order);
+app.use('/api/customer', customer);
+
 
 // 404 handler
 app.use((req, res) => {

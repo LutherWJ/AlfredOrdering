@@ -41,9 +41,8 @@ const customerSchema = new mongoose.Schema({
 });
 
 // Update updated_at on save
-customerSchema.pre('save', function(next) {
+customerSchema.pre('save', function() {
     this.updated_at = new Date();
-    next();
 });
 
-export default mongoose.model('Customer', customerSchema);
+export default mongoose.model('Customers', customerSchema);
