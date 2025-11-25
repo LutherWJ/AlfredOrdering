@@ -1,0 +1,22 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // Server-specific configuration for Bun runtime
+    "lib": ["ESNext"],
+    "types": ["bun-types"],
+
+    // Server doesn't need JSX
+    "jsx": "preserve",
+
+    // Enable source maps for debugging
+    "sourceMap": true
+  },
+  "include": [
+    "**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "../client",
+    "../dist"
+  ]
+}
