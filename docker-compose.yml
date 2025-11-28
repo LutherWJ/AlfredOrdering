@@ -13,6 +13,7 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: securepassword
     volumes:
       - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     networks:
       - alfred-network
     healthcheck:
@@ -32,7 +33,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - MONGODB_URI=mongodb://admin:securepassword@mongodb:27017/alfred_ordering_db?authSource=admin
+      - MONGODB_URI=mongodb://alfred_user:alfred_password@mongodb:27017/alfred_ordering_db
       - CORS_ORIGIN=http://localhost:5173
     depends_on:
       mongodb:

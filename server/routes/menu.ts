@@ -1,6 +1,6 @@
 import {Router} from "express";
-import menu from "../models/menus.ts";
-import {validateID} from "../utils/validation.ts";
+import Menu from "../models/Menu.ts";
+import {isValidObjectId} from "../utils/validation.ts";
 
 const router = Router();
 
@@ -10,20 +10,20 @@ router.get('/', async (req, res) => {
     // Get all menus if no ID provided
     if (id === undefined) {
         try {
-            const menus = await menu.find();
+            const menus = await Menu.find();
             return res.json(menus);
         } catch (err) {
             return res.status(500).json({ error: "Failed to fetch menus" });
         }
     }
 
-    if (!validateID(id)) {
-        return res.status(400).json({ error: "Invalid ID" });
+    if (!isValidObjectId(id)) {
+        return res.status(400).json({ error: 'Invalid ID format' });
     }
 
     // Get specific menu
     try {
-        const foundMenu = await menu.findOne({ restaurant_id: id });
+        const foundMenu = await Menu.findOne({ restaurant_id: id });
 
         if (!foundMenu) {
             return res.status(404).json({ error: `Could not find menu with restaurant id ${id}` });
@@ -33,10 +33,6 @@ router.get('/', async (req, res) => {
     } catch (err) {
         return res.status(500).json({ error: "Database error" });
     }
-
-})
-
-router.post('/', async (req, res) => {
 
 })
 

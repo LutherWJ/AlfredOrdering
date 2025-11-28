@@ -6,7 +6,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun run --watch server/index.ts",
+    "dev": "bun run --watch server/index.ts & vite",
+    "dev:server": "bun run --watch server/index.ts",
     "dev:client": "vite",
     "start": "bun run server/index.ts",
     "build:client": "vue-tsc --project ./client && vite build",
@@ -15,6 +16,7 @@
     "typecheck:client": "vue-tsc --project ./client --noEmit",
     "typecheck:server": "tsc --project ./server --noEmit",
     "preview:client": "vite preview",
+    "seed:menu": "bun --env-file=.env run server/scripts/seedMenu.ts",
     "docker:build": "docker-compose build",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",
@@ -27,11 +29,13 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@vitejs/plugin-vue": "^5.2.1",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3",
     "vite": "^6.0.5",
     "vue-tsc": "^2.2.0"
   },
@@ -39,14 +43,18 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "axios": "^1.13.2",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.0.0",
     "passport": "^0.7.0",
-    "tailwindcss": "^3.4.17",
+    "pinia": "^3.0.4",
     "vue": "^3.5.13",
-    "vue-router": "^4.6.3"
+    "vue-router": "^4.6.3",
+    "vue-toastification": "^2.0.0-rc.5"
   }
 }

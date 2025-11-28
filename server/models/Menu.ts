@@ -54,14 +54,10 @@ const menuItemSchema = new mongoose.Schema({
         type: String,
         default: '/images/menu/default.jpg'
     },
-
-    // Availability management (solves real-world problem)
     is_available: {
         type: Boolean,
         default: true
     },
-
-    // Dietary information
     is_vegetarian: {
         type: Boolean,
         default: false
@@ -74,9 +70,8 @@ const menuItemSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
-
     prep_time: {
-        type: Number, // minutes
+        type: Number,
         min: 0
     },
     max_per_order: {
@@ -84,7 +79,6 @@ const menuItemSchema = new mongoose.Schema({
         min: 1,
         default: 10
     },
-
     extras: [extraSchema]
 }, { _id: false });
 
@@ -129,9 +123,7 @@ const menuSchema = new mongoose.Schema({
         type: Boolean,
         default: true
     },
-
     groups: [menuGroupSchema],
-
     created_at: {
         type: Date,
         default: Date.now

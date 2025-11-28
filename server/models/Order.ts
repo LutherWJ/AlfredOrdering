@@ -89,19 +89,16 @@ const orderSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
-
     // Denormalized customer info (snapshot at order time)
     customer: {
         type: customerSnapshotSchema,
         required: true
     },
-
     // Denormalized restaurant info
     restaurant: {
         type: restaurantSnapshotSchema,
         required: true
     },
-
     // Complete order items with snapshots
     items: {
         type: [orderItemSchema],
@@ -113,7 +110,6 @@ const orderSchema = new mongoose.Schema({
             message: 'Order must contain at least one item'
         }
     },
-
     // Order status
     status: {
         type: String,
@@ -121,7 +117,6 @@ const orderSchema = new mongoose.Schema({
         default: 'pending',
         required: true
     },
-
     // Timing
     order_datetime: {
         type: Date,
@@ -130,7 +125,6 @@ const orderSchema = new mongoose.Schema({
     },
     pickup_time_requested: Date,
     pickup_time_ready: Date,
-
     // Money
     subtotal_amount: {
         type: Number,
@@ -147,18 +141,15 @@ const orderSchema = new mongoose.Schema({
         required: true,
         min: 0
     },
-
     special_instructions: {
         type: String,
         maxlength: 500
     },
-
     is_cancelled: {
         type: Boolean,
         default: false
     },
     cancelled_at: Date,
-
     created_at: {
         type: Date,
         default: Date.now
@@ -174,7 +165,6 @@ orderSchema.pre('save', function() {
     this.updated_at = new Date();
 });
 
-// Indexes for common queries
 orderSchema.index({ order_number: 1 });
 orderSchema.index({ 'customer.customer_id': 1, created_at: -1 }); // Customer order history
 orderSchema.index({ status: 1, created_at: -1 }); // Kitchen display (pending/preparing orders)
