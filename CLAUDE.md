@@ -1,878 +1,651 @@
-# Campus Ordering App - Database Architecture Documentation
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-This is a mobile ordering application for Alfred State College campus dining that solves real-world problems with the current system:
+Campus ordering application for Alfred State College dining. Built with MEVB stack (MongoDB, Express, Vue, Bun).
 
-**Problems Being Solved:**
-1. **No real-time availability** - Current app doesn't show when items are out of stock, leading to order substitutions
-2. **Rigid menu structure** - Can't dynamically add/remove items or modify extras (e.g., can't disable american cheese when kitchen runs out)
-3. **Poor user experience** - Students order items that aren't available and receive substitutions without notification
+**Core Problems Solved:**
+1. Real-time availability tracking (no more ordering out-of-stock items)
+2. Dynamic menu management (add/remove items, toggle extras independently)
+3. Historical price snapshots (orders preserve what customer actually paid)
 
-**Solution Approach:**
-- Dynamic menu management with real-time availability tracking
-- Flexible extras system that can be enabled/disabled independently
-- Denormalized MongoDB database for fast queries and simple updates
+**Key Architecture Pattern:** Denormalized MongoDB with 4-level nested documents (menu → groups → items → extras) and historical snapshots in orders.
+
+## Essential Commands
+
+### Development
+```bash
+# Start full development (database + server + client)
+bun run dev              # Runs both server and client concurrently
+
+# Start components individually
+bun run dev:server       # Backend only (auto-reload with --watch)
+bun run dev:client       # Frontend only (Vite HMR on :5173)
+bun run db:start         # MongoDB container only
+
+# Type checking
+bun run typecheck        # Check both client and server
+bun run typecheck:client # Vue + TypeScript client
+bun run typecheck:server # Server TypeScript only
+```
+
+### Building & Production
+```bash
+bun run build:client     # Builds Vue app to dist/client
+bun run build:server     # Compiles TypeScript server
+bun run production       # Docker Compose production build
+```
+
+### Database Operations
+```bash
+bun run seed:menu        # Populates menu collection with sample data
+bun run docker:clean     # Remove containers AND volumes (fresh start)
+```
+
+### Docker
+```bash
+bun run docker:up        # Start all containers
+bun run docker:down      # Stop containers (keeps data)
+bun run docker:logs      # View container logs
+bun run docker:restart   # Restart containers
+```
+
+## Code Architecture
+
+### Backend Structure (`server/`)
+
+**Entry Point:** `server/index.ts`
+- Express 5 app with CORS, cookie-parser, JSON middleware
+- Routes mounted at `/api/{auth,menu,order,customer}`
+- Global error handler and 404 handler
+- Waits for MongoDB connection before listening
+
+**Models (`server/models/`):**
+- Mongoose schemas with deeply nested subdocuments
+- `Menu.ts`: 4-level nesting (menu → groups → items → extras)
+- `Order.ts`: Embedded snapshots (customer, restaurant, items)
+- `Customer.ts`: Simple standalone collection
+- Embedded schemas use `{ _id: false }` to prevent extra ObjectIds
+
+**Services (`server/services/`):**
+- `orderService.ts`: Core order creation logic ⭐ CRITICAL
+  - `createOrder()` at line 174 - Main orchestration function
+  - `validateItemAvailability()` - THE ENTIRE PROBLEM WE'RE SOLVING
+  - Builds historical snapshots, calculates tax, generates order numbers
+
+**Routes (`server/routes/`):**
+- Thin route handlers that delegate to services
+- `auth.ts`: Login/logout with JWT
+- `menu.ts`: Fetch menus
+- `order.ts`: Create orders, view history
+- `customer.ts`: CRUD operations
+
+**Middleware (`server/middleware/`):**
+- `auth.ts`: JWT token validation, extracts customer_id from token
+
+**Utilities (`server/utils/`):**
+- `validation.ts`: Zod schemas for request validation
+
+### Frontend Structure (`client/`)
+
+**Entry Point:** `client/main.ts`
+- Initializes Vue 3 app with Pinia and Vue Router
+- Mounts to `#app` in `client/index.html`
+
+**Routing Flow (`client/router/index.ts`):**
+```
+Home → Login → MenuSelect → MenuGroupSelect → MenuItemSelect
+     → ItemExtraSelect → Cart → Checkout
+```
+- Auth guard redirects to `/login` if not authenticated
+- Prevents logged-in users from accessing login page
+
+**State Management (`client/store/`):**
+- **Pinia stores (Composition API pattern)**
+- `authStore.ts`: JWT auth, login/logout, check auth status
+- `menuStore.ts`: Menu caching with 5-minute TTL, smart cache invalidation
+- `cartStore.ts`: Shopping cart state, builds `CreateOrderRequest` for API
+
+**Services (`client/services/`):**
+- `api.ts`: Axios instance with credentials and base URL
+- `authService.ts`: Authentication API calls
+- `menuService.ts`: Fetch menus from backend
+- `orderService.ts`: Create orders, fetch order history
+
+**Views (`client/views/`):**
+- Selection flow uses route params to navigate nested menu structure
+- Each level passes IDs to next level via Vue Router params
+- Cart and Checkout handle order submission and confirmation
+
+**Components (`client/components/`):**
+- `NavigationHeader.vue`: Back navigation with cart badge
+- `SelectionCard.vue`: Reusable card for menu items/groups
+- `QuantitySelector.vue`: +/- quantity controls
+- `ExtraCheckbox.vue`: Extra option selection with price display
+
+### Shared Types (`shared/types.ts`)
+
+TypeScript interfaces shared between client and server:
+- Domain models: `Menu`, `MenuItem`, `MenuExtra`, `Order`, `Customer`
+- API requests: `CreateOrderRequest`, `LoginRequest`, etc.
+- API responses: `LoginResponse`, `HealthResponse`, etc.
+- `Result<T,E>` type for explicit error handling
+- **Ensures end-to-end type safety**
+
+## Key Implementation Patterns
+
+### Order Creation Flow ⭐ CRITICAL
+
+**This is the most important operation in the system.**
+
+Located in: `server/services/orderService.ts:174` - `createOrder()`
+
+**Flow:**
+1. **Fetch Phase:**
+   - Get customer document by ID
+   - Get menu document by restaurant_id
+
+2. **Validation Phase:**
+   - For each ordered item, verify `is_available: true` in current menu
+   - For each extra, verify `is_available: true`
+   - Throw error if ANY item/extra is unavailable (prevents substitutions!)
+
+3. **Snapshot Phase:**
+   - Create customer snapshot (name, email, phone, student_id)
+   - Create restaurant snapshot (name, location, phone)
+   - Create item snapshots with CURRENT prices (preserves historical pricing)
+
+4. **Order Creation:**
+   - Generate unique `order_number` (format: ORD-timestamp-random)
+   - Calculate subtotal, tax, total
+   - Create Order document with all snapshots
+   - Save to database
+   - Return complete order
+
+**Why Snapshots?** Menu prices change over time, but orders must reflect what customer actually paid at order time. Customer names can change, but historical orders preserve the name at time of order.
+
+### Menu Caching Strategy
+
+Frontend `menuStore` implements smart caching:
+- `fetchMenus(force?)` - Fetches all menus, respects 5-minute cache unless `force=true`
+- `fetchMenuByRestaurantId()` - Returns cached menu if valid, else fetches all
+- `clearCache()` - Invalidates cache (call after admin menu updates)
+- `isCacheValid` computed property checks if last fetch was within TTL
+
+### Authentication Pattern
+
+- JWT tokens stored in **httpOnly cookies** (set by server, prevents XSS)
+- `authenticateToken` middleware extracts `customer_id` from JWT payload
+- Frontend `authStore` checks auth status on app initialization
+- Router guards prevent unauthenticated access to protected routes
+- Token refresh not implemented (tokens expire after 24h)
+
+### Nested Menu Updates
+
+Updating deeply nested fields requires MongoDB **array filters**:
+
+```javascript
+// Mark item unavailable (3 levels deep)
+await Menu.updateOne(
+  { "groups.items.item_id": itemId },
+  { $set: { "groups.$[].items.$[item].is_available": false } },
+  { arrayFilters: [{ "item.item_id": itemId }] }
+)
+
+// Disable specific extra (4 levels deep)
+await Menu.updateOne(
+  { "groups.items.extras.extra_id": extraId },
+  { $set: { "groups.$[].items.$[].extras.$[extra].is_available": false } },
+  { arrayFilters: [{ "extra.extra_id": extraId }] }
+)
+
+// Add new item to group
+await Menu.updateOne(
+  { "groups.group_id": groupId },
+  { $push: { "groups.$.items": newItemObject } }
+)
+```
 
 ## Database Architecture
 
-### Two-Database Design (Academic Context)
-
-This project demonstrates understanding of both normalized relational databases and denormalized document databases:
-
-**MySQL Database: `campus_ordering_operational`**
-- Normalized relational schema (8 tables)
-- Maintains referential integrity with foreign keys
-- Academic reference showing traditional database design
-- **NOT implemented in the actual application** - exists for theoretical batch sync pattern discussed in database class
-
-**MongoDB Database: `campus_ordering`**
-- Denormalized document database (3 collections)
-- What the application actually uses
-- Optimized for read performance and simple updates
-- Embedded documents eliminate need for JOINs
-
-### Why This Hybrid Approach?
-
-1. **Academic Requirements** - Database class emphasized materialized views and sync patterns
-2. **Real-world Applicability** - Demonstrates understanding of both paradigms
-3. **Practical Implementation** - MongoDB alone is simpler and more appropriate for this prototype
-4. **Learning Value** - Shows trade-offs between normalized vs denormalized approaches
-
-## MongoDB Schema (Application Database)
+### MongoDB Collections (3)
 
 **Database Name:** `campus_ordering`
 
-### Collection 1: `customers`
-
-Simple customer records - kept separate because they're referenced by orders.
+#### 1. `customers` Collection
+Simple customer records - kept separate (not embedded in orders) because:
+- Customers exist before their first order
+- Customer info updates shouldn't affect all historical orders
+- Reasonable collection size (one doc per customer)
 
 ```javascript
 {
-  _id: ObjectId("..."),
+  _id: ObjectId,
   fname: "Luther",
   lname: "Student",
-  email: "luther@alfred.edu",
+  email: "luther@alfred.edu",        // Unique index
   phone: "+1-607-555-0123",
-  student_id: "STU20240001",
+  student_id: "STU20240001",         // Unique sparse index
   preferred_name: "Luke",
   is_active: true,
-  created_at: ISODate("..."),
-  updated_at: ISODate("...")
+  created_at: ISODate,
+  updated_at: ISODate
 }
 ```
 
-**Key Features:**
-- Email is unique and indexed
-- Student ID is unique but sparse (allows null)
-- Simple CRUD operations
+#### 2. `menus` Collection ⭐ CORE PATTERN
 
-### Collection 2: `menus`
-
-**One document per restaurant** with entire menu structure embedded. This is the core of solving the availability problem.
+**One document per restaurant** with entire menu structure embedded.
 
 ```javascript
 {
-  _id: ObjectId("..."),
-  restaurant_id: ObjectId("..."),
+  _id: ObjectId,
+  restaurant_id: ObjectId,           // Indexed
   restaurant_name: "Campus Grill",
   restaurant_location: "Powell Campus Center",
   restaurant_phone: "+1-607-555-0200",
   is_active: true,
-  
-  groups: [
+
+  groups: [                          // Level 1: Groups
     {
-      group_id: ObjectId("..."),
+      group_id: ObjectId,
       group_name: "Burgers & Sandwiches",
       display_order: 2,
       is_active: true,
-      items: [
+
+      items: [                       // Level 2: Items
         {
-          item_id: ObjectId("..."),
+          item_id: ObjectId,
           item_name: "Cheeseburger Deluxe",
           description: "Quarter pound beef patty with cheese",
           base_price: 8.99,
           image_url: "/images/menu/cheeseburger.jpg",
-          
-          // AVAILABILITY MANAGEMENT (solves real-world problem)
-          is_available: true,
-          
-          // Dietary filters
+          is_available: true,        // ⭐ AVAILABILITY TRACKING
           is_vegetarian: false,
           is_vegan: false,
           is_gluten_free: false,
-          
           prep_time: 15,
           max_per_order: 10,
-          
-          // FLEXIBLE EXTRAS (solves real-world problem)
-          extras: [
+
+          extras: [                  // Level 3: Extras
             {
-              extra_id: ObjectId("..."),
+              extra_id: ObjectId,
               extra_name: "Extra Cheese",
               extra_description: "Add extra melted cheese",
               price_delta: 1.50,
-              is_available: true,  // Can disable extras independently!
+              is_available: true,    // ⭐ PER-EXTRA AVAILABILITY
               is_required: false,
               max_selectable: 3,
               display_order: 1
-            },
-            {
-              extra_id: ObjectId("..."),
-              extra_name: "No Pickles",
-              extra_description: "Remove pickles",
-              price_delta: 0.00,
-              is_available: true,
-              is_required: false,
-              max_selectable: 1,
-              display_order: 2
             }
           ]
         }
       ]
     }
   ],
-  
-  created_at: ISODate("..."),
-  updated_at: ISODate("...")
+
+  created_at: ISODate,
+  updated_at: ISODate
 }
 ```
 
 **Why This Structure?**
-- **Single query loads entire menu** - perfect for mobile app browsing
-- **Easy to update availability** - staff can mark items/extras unavailable with single update
-- **No JOINs needed** - everything nested in one document
-- **Flexible** - can add/remove items and extras dynamically
+- **Single query loads entire menu** - perfect for mobile browsing
+- **Easy availability updates** - single update to toggle item/extra
+- **No JOINs needed** - everything in one document
+- **Flexible** - add/remove items dynamically
+- **Document size** - well under 16MB limit even for large menus
 
-**Common Operations:**
+#### 3. `orders` Collection
 
-```javascript
-// Get entire menu (mobile app browsing)
-db.menus.findOne({ restaurant_id: restaurantId })
-
-// Mark item unavailable (kitchen runs out)
-db.menus.updateOne(
-  { "groups.items.item_id": itemId },
-  { 
-    $set: { 
-      "groups.$[].items.$[item].is_available": false 
-    }
-  },
-  { arrayFilters: [{ "item.item_id": itemId }] }
-)
-
-// Disable specific extra (e.g., out of american cheese)
-db.menus.updateOne(
-  { "groups.items.extras.extra_id": extraId },
-  { 
-    $set: { 
-      "groups.$[].items.$[].extras.$[extra].is_available": false 
-    }
-  },
-  { arrayFilters: [{ "extra.extra_id": extraId }] }
-)
-
-// Add new item to group
-db.menus.updateOne(
-  { "groups.group_id": groupId },
-  {
-    $push: {
-      "groups.$.items": {
-        item_id: new ObjectId(),
-        item_name: "New Item",
-        base_price: 9.99,
-        is_available: true,
-        extras: []
-      }
-    }
-  }
-)
-```
-
-### Collection 3: `orders`
-
-**One document per order** with complete snapshots of customer, restaurant, and items at order time.
+**One document per order** with complete snapshots.
 
 ```javascript
 {
-  _id: ObjectId("..."),
-  order_number: "ORD-20241124-0123",
-  
-  // CUSTOMER SNAPSHOT (denormalized at order time)
-  customer: {
-    customer_id: ObjectId("..."),
+  _id: ObjectId,
+  order_number: "ORD-20241124-0123", // Unique
+
+  customer: {                        // ⭐ SNAPSHOT
+    customer_id: ObjectId,
     name: "Luther Student",
     preferred_name: "Luke",
     email: "luther@alfred.edu",
     phone: "+1-607-555-0123",
     student_id: "STU20240001"
   },
-  
-  // RESTAURANT SNAPSHOT (denormalized)
-  restaurant: {
-    restaurant_id: ObjectId("..."),
+
+  restaurant: {                      // ⭐ SNAPSHOT
+    restaurant_id: ObjectId,
     name: "Campus Grill",
     location: "Powell Campus Center",
     phone: "+1-607-555-0200"
   },
-  
-  // COMPLETE ORDER ITEMS (with price snapshots)
-  items: [
+
+  items: [                           // ⭐ SNAPSHOTS
     {
-      order_item_id: ObjectId("..."),
-      menu_item_id: ObjectId("..."), // Reference for analytics
+      order_item_id: ObjectId,
+      menu_item_id: ObjectId,        // Reference for analytics
       item_name: "Cheeseburger Deluxe",
       description: "Quarter pound beef patty with cheese",
-      unit_price: 8.99, // SNAPSHOT - preserves historical price
+      unit_price: 8.99,              // ⭐ PRICE SNAPSHOT
       quantity: 2,
-      
+
       extras: [
         {
-          extra_id: ObjectId("..."),
+          extra_id: ObjectId,
           extra_name: "Extra Cheese",
-          extra_price: 1.50 // SNAPSHOT - preserves historical price
+          extra_price: 1.50          // ⭐ PRICE SNAPSHOT
         }
       ],
-      
+
       item_subtotal: 20.98
     }
   ],
-  
-  // Order status
-  status: "pending", // pending | preparing | ready | completed | cancelled
-  
-  // Timing
-  order_datetime: ISODate("2024-11-24T12:30:00Z"),
-  pickup_time_requested: ISODate("2024-11-24T13:00:00Z"),
-  pickup_time_ready: null,
-  
-  // Money
+
+  status: "pending",                 // pending|preparing|ready|completed|cancelled
+  order_datetime: ISODate,
+  pickup_time_requested: ISODate,
+  pickup_time_ready: ISODate,
+
   subtotal_amount: 20.98,
   tax_amount: 1.68,
   total_amount: 22.66,
-  
+
   special_instructions: "Extra napkins please",
-  
   is_cancelled: false,
   cancelled_at: null,
-  
-  created_at: ISODate("2024-11-24T12:30:00Z"),
-  updated_at: ISODate("2024-11-24T12:30:00Z")
+
+  created_at: ISODate,
+  updated_at: ISODate
 }
 ```
 
 **Why Snapshots?**
-- Menu prices can change, but orders preserve what customer actually paid
-- Customer name can change, but order shows name at time of order
-- Historical accuracy for accounting and legal purposes
-
-**Common Operations:**
-
-```javascript
-// Get complete order (single query, no JOINs)
-db.orders.findOne({ _id: orderId })
-
-// Customer order history
-db.orders.find({ "customer.customer_id": customerId })
-  .sort({ created_at: -1 })
-
-// Kitchen display (pending/preparing orders)
-db.orders.find({ 
-  status: { $in: ["pending", "preparing"] } 
-}).sort({ created_at: 1 })
-
-// Update order status
-db.orders.updateOne(
-  { _id: orderId },
-  { 
-    $set: { 
-      status: "ready",
-      pickup_time_ready: new Date()
-    }
-  }
-)
-```
-
-## MySQL Schema (Reference Only)
-
-**Database Name:** `campus_ordering_operational`
-
-This normalized schema exists for academic purposes to demonstrate understanding of traditional relational design. **It is NOT implemented in the actual application.**
-
-### Tables
-
-```sql
--- 8 normalized tables with foreign key relationships
-
-1. customers
-2. restaurants
-3. menu_groups
-4. menu_items
-5. menu_item_extras
-6. orders
-7. order_items
-8. order_item_extras
-```
-
-**Key Differences from MongoDB:**
-- Normalized (3NF) - no data duplication
-- Foreign key constraints enforce referential integrity
-- Requires JOINs to reconstruct complete data
-- Updates propagate through relationships
-- Better for complex transactions and data integrity
-
-**Theoretical Sync Pattern:**
-- MySQL would be the "source of truth"
-- MongoDB would be synced via batch jobs (e.g., nightly)
-- Accepts potential data loss in MongoDB (eventual consistency)
-- Common in enterprise systems (operational DB → analytics DB)
-
-**Why We're Not Implementing This:**
-- Overkill for a prototype
-- MongoDB alone is simpler and sufficient
-- Sync complexity distracts from core learning goals
-- Real campus ordering app doesn't need this level of complexity
-
-## Technology Stack
-
-**Backend:**
-- **Runtime:** Bun (JavaScript runtime, faster than Node.js)
-- **Language:** TypeScript
-- **Framework:** Express.js 5
-- **Database:** MongoDB (with Mongoose ODM)
-- **Docker:** MongoDB in container for easy dev environment
-
-**Frontend:**
-- **Framework:** Vue.js 3
-- **Language:** TypeScript
-- **Build Tool:** Vite
-- **Styling:** TailwindCSS
-- **Router:** Vue Router 4
-
-**Shared:**
-- **Type Safety:** Shared TypeScript types between client and server
-
-**Stack Acronym:** MEVB (MySQL-optional, Express, Vue, Bun) with full TypeScript
-
-## File Structure
-
-```
-project-root/
-├── docker-compose.yml          # MongoDB container setup
-├── Dockerfile                  # Docker configuration
-├── CLAUDE.md                   # This file (architecture docs)
-├── README.md                   # Project README
-├── package.json                # Dependencies and scripts
-├── tsconfig.json               # Root TypeScript config
-├── vite.config.ts              # Vite configuration
-├── postcss.config.js           # PostCSS/Tailwind config
-├── .env                        # Environment variables (gitignored)
-├── .env.example                # Environment template
-│
-├── shared/                     # Shared types between client & server
-│   └── types.ts               # Common TypeScript types
-│
-├── server/                     # Backend (Express + MongoDB)
-│   ├── index.ts               # Main Express server entry point
-│   ├── tsconfig.json          # Server TypeScript config
-│   ├── config/
-│   │   └── connection.ts      # MongoDB connection setup
-│   ├── models/
-│   │   ├── customer.ts        # Customer Mongoose model
-│   │   ├── menus.ts           # Menu Mongoose model (nested schemas)
-│   │   └── orders.ts          # Order Mongoose model (nested schemas)
-│   ├── routes/                # API route handlers (to be implemented)
-│   ├── controllers/           # Route controllers (to be implemented)
-│   ├── middleware/            # Express middleware (to be implemented)
-│   ├── types/                 # Server-specific types (to be implemented)
-│   └── utils/                 # Utility functions (to be implemented)
-│
-├── client/                     # Frontend (Vue.js)
-│   ├── index.html             # Entry HTML
-│   ├── tsconfig.json          # Client TypeScript config
-│   ├── tsconfig.node.json     # Node-specific TypeScript config
-│   ├── tailwind.config.js     # TailwindCSS configuration
-│   └── src/
-│       ├── main.ts            # Vue app entry point
-│       ├── App.vue            # Root Vue component
-│       ├── style.css          # Global styles
-│       ├── components/        # Reusable Vue components
-│       ├── views/             # Page-level Vue components
-│       ├── router/            # Vue Router setup
-│       ├── store/             # State management
-│       ├── services/          # API service layer
-│       ├── types/             # Client-specific types
-│       └── utils/             # Client utility functions
-│
-└── operationalDatabase/        # MySQL schema files (reference only)
-    └── schema.sql             # Normalized MySQL schema for academic reference
-```
-
-## Setup Instructions
-
-### 1. Environment Setup
-
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit .env and set your MongoDB connection string
-# MONGODB_URI=mongodb://localhost:27017/campus_ordering
-# PORT=3000
-# NODE_ENV=development
-# CORS_ORIGIN=http://localhost:5173
-```
-
-### 2. Start MongoDB
-
-```bash
-# Start MongoDB container
-docker-compose up -d
-# or just MongoDB service
-bun run db:start
-
-# Verify it's running
-docker-compose ps
-```
-
-### 3. Install Dependencies
-
-```bash
-bun install
-```
-
-### 4. Start Development Servers
-
-```bash
-# Terminal 1: Start backend server (with auto-reload)
-bun run dev
-
-# Terminal 2: Start frontend dev server (with Vite HMR)
-bun run dev:client
-```
-
-### 5. Verify Setup
-
-```bash
-# Check backend health
-curl http://localhost:3000/health
-
-# Should return: {"status":"ok","message":"Alfred Ordering API is running"}
-```
-
-**Production Build:**
-
-```bash
-# Build client and server
-bun run build:client
-bun run build:server
-
-# Or use Docker
-bun run production
-```
-
-## API Endpoints
-
-### Menus
-
-```javascript
-// GET /api/menu - Get complete menu
-// Returns entire menu document with all groups, items, and extras
-
-// PUT /api/admin/items/:id/availability - Update item availability
-// Body: { is_available: false }
-
-// PUT /api/admin/extras/:id/availability - Update extra availability
-// Body: { is_available: false }
-
-// POST /api/admin/items - Add new menu item
-// Body: { menu_group_id, item_name, base_price, ... }
-```
-
-### Orders
-
-```javascript
-// POST /api/orders - Place new order
-// Body: { customer_id, restaurant_id, items: [...], ... }
-// Validates availability before creating order
-
-// GET /api/orders/:id - Get order details
-// Returns complete order with all embedded data
-
-// GET /api/orders/customer/:customerId - Get customer order history
-
-// PUT /api/orders/:id/status - Update order status
-// Body: { status: "preparing" | "ready" | "completed" }
-```
-
-### Customers
-
-```javascript
-// GET /api/customers - Get all customers
-// POST /api/customers - Create customer
-// GET /api/customers/:id - Get customer details
-// PUT /api/customers/:id - Update customer
-// DELETE /api/customers/:id - Delete customer
-```
-
-## Order Creation Flow (Critical)
-
-This is the most important operation - it must validate availability and create snapshots:
-
-```javascript
-async function createOrder(orderData) {
-  // 1. Fetch current menu
-  const menu = await Menu.findOne({ restaurant_id: orderData.restaurant_id });
-  
-  // 2. Validate ALL items are available
-  for (const orderedItem of orderData.items) {
-    const menuItem = menu.groups
-      .flatMap(g => g.items)
-      .find(i => i.item_id.equals(orderedItem.item_id));
-    
-    if (!menuItem.is_available) {
-      throw new Error(`${menuItem.item_name} is currently unavailable`);
-    }
-    
-    // 3. Validate extras are available
-    for (const orderedExtra of orderedItem.extras) {
-      const menuExtra = menuItem.extras
-        .find(e => e.extra_id.equals(orderedExtra.extra_id));
-      
-      if (!menuExtra || !menuExtra.is_available) {
-        throw new Error(`${menuExtra?.extra_name || 'Extra'} is unavailable`);
-      }
-    }
-  }
-  
-  // 4. Fetch customer for snapshot
-  const customer = await Customer.findById(orderData.customer_id);
-  if (!customer) {
-    throw new Error('Customer not found');
-  }
-  
-  // 5. Build order with snapshots
-  const order = new Order({
-    order_number: generateOrderNumber(),
-    
-    // Snapshot customer info
-    customer: {
-      customer_id: customer._id,
-      name: `${customer.fname} ${customer.lname}`,
-      preferred_name: customer.preferred_name,
-      email: customer.email,
-      phone: customer.phone,
-      student_id: customer.student_id
-    },
-    
-    // Snapshot restaurant info
-    restaurant: {
-      restaurant_id: menu.restaurant_id,
-      name: menu.restaurant_name,
-      location: menu.restaurant_location,
-      phone: menu.restaurant_phone
-    },
-    
-    // Snapshot items with current prices
-    items: orderData.items.map(orderedItem => {
-      const menuItem = menu.groups
-        .flatMap(g => g.items)
-        .find(i => i.item_id.equals(orderedItem.item_id));
-      
-      return {
-        order_item_id: new mongoose.Types.ObjectId(),
-        menu_item_id: menuItem.item_id,
-        item_name: menuItem.item_name,
-        description: menuItem.description,
-        unit_price: menuItem.base_price, // SNAPSHOT
-        quantity: orderedItem.quantity,
-        extras: orderedItem.extras.map(orderedExtra => {
-          const menuExtra = menuItem.extras
-            .find(e => e.extra_id.equals(orderedExtra.extra_id));
-          return {
-            extra_id: menuExtra.extra_id,
-            extra_name: menuExtra.extra_name,
-            extra_price: menuExtra.price_delta // SNAPSHOT
-          };
-        }),
-        item_subtotal: calculateItemSubtotal(menuItem, orderedItem)
-      };
-    }),
-    
-    status: 'pending',
-    order_datetime: new Date(),
-    pickup_time_requested: orderData.pickup_time_requested,
-    subtotal_amount: calculateSubtotal(orderData.items),
-    tax_amount: calculateTax(subtotal),
-    total_amount: subtotal + tax,
-    special_instructions: orderData.special_instructions
-  });
-  
-  // 6. Save order
-  await order.save();
-  
-  return order;
-}
-```
-
-## Design Decisions & Trade-offs
-
-### 1. Denormalized MongoDB vs Normalized MySQL
-
-**Decision:** Use denormalized MongoDB for the application
-
-**Reasoning:**
-- Menu browsing requires entire menu → single document query is fastest
-- Orders are immutable after creation → snapshots prevent issues with changing data
-- Updates are infrequent (staff changing availability) → no write contention issues
-- Mobile app benefits from simple queries → better user experience
-
-**Trade-off:**
-- Data duplication (orders contain copies of customer/item data)
-- No foreign key constraints (must validate in application code)
-- Harder to update historical data if needed
-
-### 2. Embedded Arrays vs References
-
-**Decision:** Embed groups → items → extras in menu document
-
-**Reasoning:**
-- Menu is always accessed as a complete unit
-- Groups/items/extras are never queried independently
-- Eliminates multiple queries and JOINs
-- Array size is bounded (reasonable number of menu items)
-
-**Trade-off:**
-- Updating nested items requires array filters
-- Document size grows with menu complexity (but well under 16MB limit)
-- Can't easily query "all items across all restaurants" (not a requirement)
-
-### 3. Snapshots in Orders
-
-**Decision:** Copy all data into order at creation time
-
-**Reasoning:**
-- Preserves historical accuracy (what customer ordered at what price)
-- Order display doesn't require lookups
-- Menu changes don't affect past orders
+- Preserves historical accuracy (what customer paid)
+- Order display doesn't require lookups or JOINs
+- Menu changes don't retroactively affect past orders
 - Accounting/legal requirement
 
-**Trade-off:**
-- Data duplication
-- Customer name changes won't update in historical orders
-- Can't easily update prices retroactively (feature, not bug)
+### Design Decisions & Trade-offs
 
-### 4. Image Storage
+**1. Denormalized MongoDB (vs Normalized MySQL)**
+- ✅ Fast reads (single query for entire menu)
+- ✅ Simple updates (no cascading changes)
+- ✅ Perfect for read-heavy mobile app
+- ❌ Data duplication in orders
+- ❌ No foreign key constraints (validate in code)
+- ❌ Harder to update historical data
 
-**Decision:** Store image URLs/paths in database, files in `/public/images/menu/`
+**2. Embedded Arrays (vs References)**
+- ✅ Menu always accessed as complete unit
+- ✅ Eliminates JOINs
+- ✅ Bounded size (reasonable # of items)
+- ❌ Nested updates require array filters
+- ❌ Can't query "all items across restaurants"
 
-**Reasoning:**
-- Simple for prototype
-- Express serves static files easily
-- Database stays lean
+**3. Snapshots in Orders**
+- ✅ Historical accuracy
+- ✅ No lookups needed for order display
+- ✅ Immutable after creation
+- ❌ Data duplication
+- ❌ Customer updates don't affect old orders
 
-**Production Alternative:**
-- Use S3/CloudFront for images
-- Store CDN URLs in database
-- Same pattern, different storage backend
+### MySQL Reference (Academic Context)
 
-### 5. No Real-Time Sync
+A normalized MySQL schema exists in `operationalDatabase/schema.sql` for academic purposes to demonstrate understanding of traditional relational design. **It is NOT implemented in the application.**
 
-**Decision:** Skip MySQL → MongoDB sync implementation
+**Key Differences:**
+- 8 normalized tables vs 3 MongoDB collections
+- Foreign key constraints vs application-level validation
+- JOINs required vs embedded documents
+- Better for complex transactions vs better for read performance
 
-**Reasoning:**
-- Prototype scope - demonstrate understanding, not full implementation
-- MongoDB alone is simpler and sufficient
-- Can always add sync later if needed
-- Class discussion covered the pattern conceptually
+This demonstrates understanding of both paradigms and making informed architectural decisions.
 
-**If Implemented:**
-- Nightly batch sync from MySQL to MongoDB
-- MySQL = source of truth, MongoDB = read-optimized cache
-- Accept data loss in MongoDB (eventual consistency)
-- Common enterprise pattern (operational → analytics DB)
+## Common Development Tasks
 
-## Common Queries & Patterns
+### Adding a New API Route
+1. Create route handler in `server/routes/{resource}.ts`
+2. Define types in `shared/types.ts` (request/response interfaces)
+3. Mount route in `server/index.ts`: `app.use('/api/{resource}', router)`
+4. Create corresponding service in `client/services/{resource}Service.ts`
+5. Update Pinia store if state management needed
 
-### Check Item Availability Before Ordering
+### Adding a New Vue View
+1. Create component in `client/views/{ViewName}.vue`
+2. Add route in `client/router/index.ts`
+3. Add navigation link from appropriate view
+4. Consider adding to navigation header if top-level page
 
-```javascript
+### Adding a Menu Item Programmatically
+```typescript
 const menu = await Menu.findOne({ restaurant_id });
-const item = menu.groups
-  .flatMap(g => g.items)
-  .find(i => i.item_id.equals(itemId));
+const group = menu.groups.find(g => g.group_id.equals(groupId));
 
-if (!item.is_available) {
-  throw new Error('Item unavailable');
-}
+group.items.push({
+  item_id: new mongoose.Types.ObjectId(),
+  item_name: "New Item",
+  description: "Description",
+  base_price: 9.99,
+  is_available: true,
+  extras: []
+});
+
+await menu.save();
+// Clear frontend cache!
 ```
 
-### Mark Item Out of Stock
+### Debugging Order Creation Issues
+1. Check server logs for validation errors
+2. Verify `is_available` flags in menu document (use MongoDB Compass)
+3. Ensure `customer_id` exists and JWT token is valid
+4. Confirm cart items have valid `item_id` and `extra_id` values
+5. Check that `restaurant_id` matches menu document
+6. Verify tax calculation in `shared/constants.ts`
 
-```javascript
+### Updating Item Availability
+```typescript
+// Backend route: PUT /api/admin/items/:itemId/availability
 await Menu.updateOne(
   { "groups.items.item_id": itemId },
-  { 
-    $set: { 
-      "groups.$[].items.$[item].is_available": false,
+  {
+    $set: {
+      "groups.$[].items.$[item].is_available": isAvailable,
       updated_at: new Date()
     }
   },
   { arrayFilters: [{ "item.item_id": itemId }] }
 );
+// Clear frontend menu cache!
 ```
 
-### Get Kitchen Display Orders
+## File Reference Guide
 
-```javascript
-const activeOrders = await Order.find({
-  status: { $in: ['pending', 'preparing'] }
-}).sort({ order_datetime: 1 });
-```
+**Critical Files:**
+- `server/services/orderService.ts:174` - Order creation orchestration
+- `server/models/Menu.ts` - 4-level nested menu schema
+- `client/store/cartStore.ts` - Shopping cart state & request builder
+- `client/router/index.ts:30` - Auth navigation guards
+- `shared/types.ts` - All shared TypeScript interfaces
 
-### Get Customer Order History
+**Configuration:**
+- `vite.config.ts` - Frontend build config (root: ./client)
+- `docker-compose.yml` - Container orchestration
+- `.env.example` - Environment variables template
+- `server/config/connection.ts` - MongoDB connection setup
 
-```javascript
-const orderHistory = await Order.find({
-  'customer.customer_id': customerId
-}).sort({ created_at: -1 }).limit(10);
-```
+**Seeding:**
+- `server/scripts/seedMenu.ts` - Sample menu data generator
 
-### Add New Menu Item
+## Environment Setup
 
-```javascript
-await Menu.updateOne(
-  { "groups.group_id": groupId },
-  {
-    $push: {
-      "groups.$.items": {
-        item_id: new mongoose.Types.ObjectId(),
-        item_name: "New Item",
-        description: "Description",
-        base_price: 9.99,
-        is_available: true,
-        is_vegetarian: false,
-        is_vegan: false,
-        is_gluten_free: false,
-        extras: []
-      }
-    },
-    $set: { updated_at: new Date() }
-  }
-);
-```
+### Required Environment Variables
 
-## Testing Strategy
-
-### Manual Testing with Compass
-
-1. Use MongoDB Compass GUI to view/edit documents
-2. Test availability updates manually
-3. Create sample orders and verify snapshots
-
-### API Testing
+Copy `.env.example` to `.env` and configure:
 
 ```bash
-# Get menu
-curl http://localhost:3000/api/menu
+# Server
+PORT=3000
+NODE_ENV=development
 
-# Create order
-curl -X POST http://localhost:3000/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer_id": "...",
-    "restaurant_id": "...",
-    "items": [...]
-  }'
+# Database
+MONGODB_URI=mongodb://admin:securepassword@localhost:27017/alfred_ordering_db?authSource=admin
 
-# Update order status
-curl -X PUT http://localhost:3000/api/orders/123/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "ready"}'
+# JWT
+JWT_SECRET=your-secret-key-here          # Change in production!
+JWT_EXPIRE=24h
+
+# CORS
+CORS_ORIGIN=http://localhost:5173        # Frontend dev server
 ```
 
-## Academic Context & Learning Goals
+**MongoDB Connection Strings:**
+- Local dev: `mongodb://admin:securepassword@localhost:27017/alfred_ordering_db?authSource=admin`
+- Docker containers: `mongodb://alfred_user:alfred_password@mongodb:27017/alfred_ordering_db`
 
-This project demonstrates understanding of:
+### First-Time Setup
 
-1. **Document Database Design** - Denormalization, embedding, references
-2. **NoSQL Trade-offs** - Performance vs consistency, flexibility vs structure
-3. **Sync Patterns** - Materialized views, eventual consistency, batch processing
-4. **Real-World Problems** - Availability management, dynamic menus, historical accuracy
-5. **Schema Design** - Both normalized (MySQL) and denormalized (MongoDB) approaches
+```bash
+# 1. Copy environment file
+cp .env.example .env
 
-## What We Removed from Original Schema
+# 2. Install dependencies
+bun install
 
-Tell your group these were removed/simplified:
+# 3. Start MongoDB
+bun run db:start
 
-- ❌ `order_status` table → Using string enum in orders
-- ❌ `order_history` table → Not tracking status changes (just current state)
-- ❌ `opening_hours` / `weekdays` tables → Out of scope for MVP
-- ❌ `menu` table → Merged into menu groups/restaurant data
-- ❌ Limited-time item tracking → Focusing on availability only
-- ❌ Multiple normalized collections → Going fully denormalized for MongoDB
+# 4. Seed sample data (optional)
+bun run seed:menu
 
-## Key Implementation Notes
+# 5. Start development servers
+bun run dev          # Server on :3000
+bun run dev:client   # Client on :5173
+```
 
-1. **Always validate availability** before creating orders
-2. **Always snapshot prices** when creating orders
-3. **Use array filters** for nested updates in menus
-4. **Index frequently queried fields** (customer_id, status, order_datetime)
-5. **Keep customer collection separate** - don't embed in every order
-6. **Image files in /public/images/menu/** - paths in database
-7. **Generate unique order numbers** (e.g., ORD-20241124-0123)
+## Technology-Specific Notes
+
+### Bun Runtime
+- Drop-in Node.js replacement with faster startup and native TypeScript
+- `bun run --watch` provides hot-reload for server
+- All npm scripts work with `bun run`
+- No transpilation needed for TypeScript
+
+### Vue 3 Composition API
+- All components use `<script setup>` syntax
+- Pinia stores use Composition API pattern: `defineStore(() => { ... })`
+- TypeScript with `<script setup lang="ts">`
+- Reactive state with `ref()` and `computed()`
+
+### Mongoose Patterns
+- Use `{ _id: false }` on embedded schemas to prevent extra ObjectIds
+- `pre('save')` hooks update `updated_at` timestamps
+- Indexes on frequently queried fields: `restaurant_id`, `customer_id`, `status`
+- Array filters for updating nested documents
+
+### Vite Configuration
+- Root set to `./client` directory
+- Dev server on port 5173
+- Builds to `../dist/client`
+- Vue plugin with JSX support
+
+## API Endpoints Reference
+
+### Authentication
+- `POST /api/auth/login` - Login with email (returns JWT in httpOnly cookie)
+- `POST /api/auth/logout` - Clear auth cookie
+- `GET /api/auth/check` - Check if authenticated
+
+### Menus
+- `GET /api/menu` - Get all active menus
+- `GET /api/menu/:restaurantId` - Get menu by restaurant ID
+
+### Orders
+- `POST /api/order` - Create new order (validates availability)
+- `GET /api/order/history` - Get authenticated customer's order history
+
+### Customers
+- `GET /api/customer` - Get all customers
+- `POST /api/customer` - Create customer
+- `GET /api/customer/:id` - Get customer by ID
+- `PUT /api/customer/:id` - Update customer
+- `DELETE /api/customer/:id` - Delete customer
+
+## Common MongoDB Queries
+
+```javascript
+// Get entire menu for restaurant
+db.menus.findOne({ restaurant_id: ObjectId("...") })
+
+// Find pending/preparing orders (kitchen display)
+db.orders.find({ status: { $in: ["pending", "preparing"] } })
+  .sort({ order_datetime: 1 })
+
+// Get customer order history
+db.orders.find({ "customer.customer_id": ObjectId("...") })
+  .sort({ created_at: -1 })
+  .limit(10)
+
+// Mark item unavailable
+db.menus.updateOne(
+  { "groups.items.item_id": ObjectId("...") },
+  { $set: { "groups.$[].items.$[item].is_available": false } },
+  { arrayFilters: [{ "item.item_id": ObjectId("...") }] }
+)
+```
 
 ## Docker Commands
 
 ```bash
-# Start MongoDB
+# Start all services
 docker-compose up -d
 
-# Stop MongoDB
+# View logs
+docker-compose logs -f
+docker-compose logs -f mongodb
+
+# Stop services (keeps data)
 docker-compose down
 
 # Stop and remove all data (fresh start)
 docker-compose down -v
 
-# View logs
-docker-compose logs -f mongodb
-
-# Connect to MongoDB shell
-docker exec -it campus_ordering_mongo mongosh
+# MongoDB shell
+docker exec -it alfred_ordering_db mongosh -u admin -p securepassword
 ```
 
-## MongoDB Shell Commands
+## Known Patterns & Conventions
 
-```javascript
-// Connect to database
-use campus_ordering
+**Naming:**
+- Database fields: `snake_case` (e.g., `restaurant_id`, `is_available`)
+- TypeScript/JavaScript: `camelCase` for variables, `PascalCase` for types/components
+- Route params: `camelCase` (e.g., `restaurantId`, `groupId`, `itemId`)
 
-// View collections
-show collections
+**API Responses:**
+- Success: `{ ok: true, value: T }`
+- Failure: `{ ok: false, error: E }`
+- Errors include message and optional details
 
-// View all menus
-db.menus.find().pretty()
+**ObjectId Handling:**
+- MongoDB stores as `ObjectId`
+- API converts to strings for JSON serialization
+- Frontend receives/sends strings
+- Backend converts strings back to `ObjectId` for queries
 
-// View all orders
-db.orders.find().pretty()
+**Image Paths:**
+- Stored as paths in database (e.g., `/images/menu/cheeseburger.jpg`)
+- Files in `public/images/menu/` (or future CDN)
+- Express serves static files in development
 
-// Count documents
-db.orders.countDocuments()
+## Academic Context
 
-// Find orders by status
-db.orders.find({ status: "pending" })
+This project demonstrates understanding of:
+1. **Document Database Design** - Denormalization, embedding, array operations
+2. **NoSQL Trade-offs** - Performance vs consistency, flexibility vs structure
+3. **Schema Design** - Both normalized (MySQL reference) and denormalized (MongoDB actual)
+4. **Real-World Problem Solving** - Availability tracking, dynamic menus, historical snapshots
+5. **Full-Stack TypeScript** - Shared types, end-to-end type safety
 
-// Drop collection (careful!)
-db.orders.drop()
-```
-
-## Final Notes
-
-This architecture prioritizes:
-- **Simplicity** - Easy to understand and implement
-- **Performance** - Fast queries for mobile app
-- **Flexibility** - Easy to add/remove/modify menu items
-- **Real-world applicability** - Solves actual campus ordering problems
-- **Academic rigor** - Demonstrates understanding of both database paradigms
-
-The MySQL schema exists for reference and academic credit, but the MongoDB implementation is what actually runs. This shows you understand both approaches and made an informed decision about which to use.
+The MySQL schema in `operationalDatabase/schema.sql` exists for academic reference showing understanding of normalized design. The MongoDB implementation is what actually runs, demonstrating an informed architectural decision for this use case.

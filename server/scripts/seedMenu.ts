@@ -20,7 +20,8 @@ class MenuExtraBuilder {
         is_available: true,
         is_required: false,
         max_selectable: 1,
-        display_order: 0
+        display_order: 0,
+        extras: []  // Support nested extras
     };
 
     name(name: string) {
@@ -55,6 +56,12 @@ class MenuExtraBuilder {
 
     unavailable() {
         this.extra.is_available = false;
+        return this;
+    }
+
+    // NEW: Add nested extras for complex menu structures (e.g., meals)
+    addExtra(nestedExtra: MenuExtraBuilder) {
+        this.extra.extras.push(nestedExtra.build());
         return this;
     }
 
@@ -213,6 +220,210 @@ export const menu = () => new MenuBuilder();
 
 const campusGrill = menu()
     .restaurant('Campus Grill', 'Powell Campus Center', '+1-607-555-0200')
+    // ========== VALUE MEALS (Demonstrates Nested Extras) ==========
+    .addGroup(
+        group()
+            .name('Value Meals')
+            .order(0)
+            .addItem(
+                item()
+                    .name('Classic Combo')
+                    .description('Choose your main, side, and drink - all at one great price!')
+                    .price(10.99)
+                    .image('/images/menu/combo-meal.jpg')
+                    .prepTime(20)
+                    // LEVEL 1: Entree Selection (Required)
+                    .addExtra(
+                        extra()
+                            .name('Entree')
+                            .description('Choose your main item')
+                            .price(0)
+                            .required(true)
+                            .maxSelectable(1)
+                            .order(1)
+                            // LEVEL 2: Entree Options
+                            .addExtra(
+                                extra()
+                                    .name('Cheeseburger')
+                                    .description('Quarter pound beef patty with cheese')
+                                    .price(0)
+                                    .order(1)
+                                    .maxSelectable(5)  // Allow multiple toppings
+                                    // LEVEL 3: Burger Customizations
+                                    .addExtra(
+                                        extra()
+                                            .name('No Pickles')
+                                            .price(0)
+                                            .order(1)
+                                    )
+                                    .addExtra(
+                                        extra()
+                                            .name('Extra Cheese')
+                                            .description('Add another slice')
+                                            .price(0.50)
+                                            .order(2)
+                                    )
+                                    .addExtra(
+                                        extra()
+                                            .name('Add Bacon')
+                                            .price(1.50)
+                                            .order(3)
+                                    )
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Grilled Chicken Sandwich')
+                                    .description('Grilled chicken breast')
+                                    .price(0)
+                                    .order(2)
+                                    .maxSelectable(3)  // Allow multiple customizations
+                                    // LEVEL 3: Chicken Customizations
+                                    .addExtra(
+                                        extra()
+                                            .name('Make it Spicy')
+                                            .description('Add jalapeños and spicy sauce')
+                                            .price(0)
+                                            .order(1)
+                                    )
+                                    .addExtra(
+                                        extra()
+                                            .name('Gluten-Free Bun')
+                                            .price(1.00)
+                                            .order(2)
+                                    )
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Veggie Burger')
+                                    .description('Plant-based patty')
+                                    .price(0)
+                                    .order(3)
+                            )
+                    )
+                    // LEVEL 1: Side Selection (Required)
+                    .addExtra(
+                        extra()
+                            .name('Side')
+                            .description('Choose your side')
+                            .price(0)
+                            .required(true)
+                            .maxSelectable(1)
+                            .order(2)
+                            // LEVEL 2: Side Options
+                            .addExtra(
+                                extra()
+                                    .name('French Fries')
+                                    .price(0)
+                                    .order(1)
+                                    .maxSelectable(3)  // Allow multiple customizations
+                                    // LEVEL 3: Fries Customizations
+                                    .addExtra(
+                                        extra()
+                                            .name('Cajun Seasoning')
+                                            .price(0)
+                                            .order(1)
+                                    )
+                                    .addExtra(
+                                        extra()
+                                            .name('Cheese Sauce')
+                                            .price(0.75)
+                                            .order(2)
+                                    )
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Onion Rings')
+                                    .price(0)
+                                    .order(2)
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Side Salad')
+                                    .price(0)
+                                    .order(3)
+                            )
+                    )
+                    // LEVEL 1: Drink Selection (Required)
+                    .addExtra(
+                        extra()
+                            .name('Drink')
+                            .description('Choose your beverage')
+                            .price(0)
+                            .required(true)
+                            .maxSelectable(1)
+                            .order(3)
+                            // LEVEL 2: Drink Options
+                            .addExtra(
+                                extra()
+                                    .name('Fountain Soda')
+                                    .description('Coke, Diet Coke, Sprite, Root Beer')
+                                    .price(0)
+                                    .order(1)
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Lemonade')
+                                    .price(0)
+                                    .order(2)
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Iced Tea')
+                                    .price(0)
+                                    .order(3)
+                            )
+                            .addExtra(
+                                extra()
+                                    .name('Bottled Water')
+                                    .price(0)
+                                    .order(4)
+                            )
+                    )
+            )
+            .addItem(
+                item()
+                    .name('Breakfast Combo')
+                    .description('Eggs, breakfast meat, and toast')
+                    .price(7.99)
+                    .image('/images/menu/breakfast-combo.jpg')
+                    .prepTime(12)
+                    // Egg Style (Required)
+                    .addExtra(
+                        extra()
+                            .name('Egg Style')
+                            .description('How would you like your eggs?')
+                            .price(0)
+                            .required(true)
+                            .order(1)
+                            .addExtra(extra().name('Scrambled').price(0).order(1))
+                            .addExtra(extra().name('Fried').price(0).order(2))
+                            .addExtra(extra().name('Poached').price(0).order(3))
+                    )
+                    // Breakfast Meat (Required)
+                    .addExtra(
+                        extra()
+                            .name('Breakfast Meat')
+                            .price(0)
+                            .required(true)
+                            .order(2)
+                            .addExtra(extra().name('Bacon').price(0).order(1))
+                            .addExtra(extra().name('Sausage').price(0).order(2))
+                            .addExtra(extra().name('Turkey Sausage').price(0.50).order(3))
+                    )
+                    // Toast (Required)
+                    .addExtra(
+                        extra()
+                            .name('Toast')
+                            .price(0)
+                            .required(true)
+                            .order(3)
+                            .addExtra(extra().name('White').price(0).order(1))
+                            .addExtra(extra().name('Wheat').price(0).order(2))
+                            .addExtra(extra().name('Rye').price(0).order(3))
+                            .addExtra(extra().name('Gluten-Free').price(1.00).order(4))
+                    )
+            )
+    )
     .addGroup(
         group()
             .name('Burgers & Sandwiches')

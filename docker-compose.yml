@@ -1,10 +1,11 @@
 version: '3.8'
 
 services:
+  # Denormalized application database
   mongodb:
     image: mongo:7.0
     container_name: alfred_ordering_db
-    restart: unless-stopped
+    restart: on-failure
     ports:
       - "27017:27017"
     environment:
@@ -22,21 +23,49 @@ services:
       timeout: 5s
       retries: 5
 
+  # Normalized record keeping database
+  mysql:
+    image: mysql:8.0
+    container_name: alfred_reporting_db
+    restart: on-failure
+    ports:
+      - "3306:3306"
+    environment:
+      # Set up the reporting database and user
+      MYSQL_ROOT_PASSWORD: securemysqlrootpassword
+      MYSQL_DATABASE: alfred_reporting_db
+      MYSQL_USER: alfred_reporting_user
+      MYSQL_PASSWORD: alfred_reporting_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./reporting-database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks:
+      - alfred-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Web Server Service
   server:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: alfred_ordering_server
-    restart: unless-stopped
+    restart: on-failure
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - MONGODB_URI=mongodb://alfred_user:alfred_password@mongodb:27017/alfred_ordering_db
       - CORS_ORIGIN=http://localhost:5173
+      - MONGODB_URI=mongodb://alfred_user:alfred_password@mongodb:27017/alfred_ordering_db
+      - MYSQL_URI=mysql://alfred_reporting_user:alfred_reporting_password@mysql:3306/alfred_reporting_db
     depends_on:
       mongodb:
+        condition: service_healthy
+      mysql:
         condition: service_healthy
     networks:
       - alfred-network
@@ -49,3 +78,4 @@ networks:
 
 volumes:
   mongodb_data:
+  mysql_data:

@@ -2,38 +2,110 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../store/cartStore'
-import type { Menu, MenuItem } from '../../shared/types'
-import { getMenus } from '../services/menuService'
+import { useMenuStore } from '../store/menuStore'
+import type { Menu, MenuItem, MenuExtra, SelectedExtra } from '../../shared/types'
 import { SALES_TAX } from '../../shared/constants'
 import NavigationHeader from '../components/NavigationHeader.vue'
 import QuantitySelector from '../components/QuantitySelector.vue'
 
 const router = useRouter()
 const cartStore = useCartStore()
+const menuStore = useMenuStore()
 
-const menu = ref<Menu | null>(null)
-const loading = ref(true)
+const menu = computed(() => {
+  if (!cartStore.restaurant_id) return null
+  return menuStore.getMenuByRestaurantId(cartStore.restaurant_id)
+})
 
 // Enriched cart items with display data from menu
 interface CartItemDisplay {
   index: number
   item_id: string
   quantity: number
-  extras: string[]
+  extras: SelectedExtra[]
   // Looked up from menu:
   item_name: string
   base_price: number
   image_url?: string
   max_per_order: number
   extra_details: Array<{
-    extra_id: string
     extra_name: string
     price_delta: number
+    nested?: Array<{
+      extra_name: string
+      price_delta: number
+    }>
   }>
+  extras_total: number
+}
+
+// Recursively find a menu extra by ID in nested structure
+function findMenuExtra(extras: MenuExtra[], extraId: string): MenuExtra | undefined {
+  for (const extra of extras) {
+    if (extra.extra_id === extraId) {
+      return extra
+    }
+    if (extra.extras && extra.extras.length > 0) {
+      const found = findMenuExtra(extra.extras, extraId)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
+// Recursively calculate total from nested extras
+function calculateExtrasTotal(menuExtras: MenuExtra[], selectedExtras: SelectedExtra[]): number {
+  let total = 0
+
+  for (const selected of selectedExtras) {
+    const menuExtra = findMenuExtra(menuExtras, selected.extra_id)
+    if (menuExtra) {
+      total += menuExtra.price_delta
+
+      // Add nested extras total
+      if (selected.extras && selected.extras.length > 0) {
+        total += calculateExtrasTotal(menuExtras, selected.extras)
+      }
+    }
+  }
+
+  return total
+}
+
+// Recursively build extra display details
+function buildExtraDetails(menuExtras: MenuExtra[], selectedExtras: SelectedExtra[]): any[] {
+  const details: any[] = []
+
+  for (const selected of selectedExtras) {
+    const menuExtra = findMenuExtra(menuExtras, selected.extra_id)
+    if (menuExtra) {
+      const detail: any = {
+        extra_name: menuExtra.extra_name,
+        price_delta: menuExtra.price_delta
+      }
+
+      // Add nested extras
+      if (selected.extras && selected.extras.length > 0) {
+        detail.nested = buildExtraDetails(menuExtras, selected.extras)
+      }
+
+      details.push(detail)
+    }
+  }
+
+  return details
 }
 
 const cartItemsDisplay = computed<CartItemDisplay[]>(() => {
-  if (!menu.value) return []
+  if (!menu.value) {
+    console.log('[Cart] No menu loaded yet')
+    return []
+  }
+
+  console.log('[Cart] Processing cart items:', {
+    cartItemCount: cartStore.items.length,
+    menuGroups: menu.value.groups.length
+  })
 
   return cartStore.items.map((cartItem, index) => {
     // Find the menu item
@@ -51,23 +123,14 @@ const cartItemsDisplay = computed<CartItemDisplay[]>(() => {
         item_name: 'Unknown Item',
         base_price: 0,
         max_per_order: 10,
-        extra_details: []
+        extra_details: [],
+        extras_total: 0
       }
     }
 
-    // Look up extra details
-    const extra_details = cartItem.extras.map(extraId => {
-      const extra = menuItem!.extras.find(e => e.extra_id === extraId)
-      return extra ? {
-        extra_id: extra.extra_id,
-        extra_name: extra.extra_name,
-        price_delta: extra.price_delta
-      } : {
-        extra_id: extraId,
-        extra_name: 'Unknown',
-        price_delta: 0
-      }
-    })
+    // Calculate extras total and build display details
+    const extras_total = calculateExtrasTotal(menuItem.extras, cartItem.extras)
+    const extra_details = buildExtraDetails(menuItem.extras, cartItem.extras)
 
     return {
       index,
@@ -78,15 +141,15 @@ const cartItemsDisplay = computed<CartItemDisplay[]>(() => {
       base_price: menuItem.base_price,
       image_url: menuItem.image_url,
       max_per_order: menuItem.max_per_order,
-      extra_details
+      extra_details,
+      extras_total
     }
   })
 })
 
 const subtotal = computed(() => {
   return cartItemsDisplay.value.reduce((sum, item) => {
-    const extrasTotal = item.extra_details.reduce((eSum, extra) => eSum + extra.price_delta, 0)
-    return sum + (item.base_price + extrasTotal) * item.quantity
+    return sum + (item.base_price + item.extras_total) * item.quantity
   }, 0)
 })
 
@@ -99,16 +162,8 @@ onMounted(async () => {
     return
   }
 
-  try {
-    const data = await getMenus(cartStore.restaurant_id)
-    if (data && data.length > 0) {
-      menu.value = data[0]
-    }
-  } catch (e) {
-    console.error('Failed to load menu:', e)
-  } finally {
-    loading.value = false
-  }
+  // Fetch menu from store (will use cache if available)
+  await menuStore.fetchMenuByRestaurantId(cartStore.restaurant_id)
 })
 
 const updateQuantity = (index: number, quantity: number) => {
@@ -132,8 +187,22 @@ const formatPrice = (price: number) => {
 }
 
 const calculateItemTotal = (item: CartItemDisplay) => {
-  const extrasTotal = item.extra_details.reduce((sum, extra) => sum + extra.price_delta, 0)
-  return (item.base_price + extrasTotal) * item.quantity
+  return (item.base_price + item.extras_total) * item.quantity
+}
+
+// Recursively render extra details
+function renderExtras(extras: any[], depth = 0): string {
+  return extras.map(extra => {
+    const indent = '  '.repeat(depth)
+    let text = `${indent}+ ${extra.extra_name}`
+    if (extra.price_delta !== 0) {
+      text += ` (${formatPrice(extra.price_delta)})`
+    }
+    if (extra.nested && extra.nested.length > 0) {
+      text += '\n' + renderExtras(extra.nested, depth + 1)
+    }
+    return text
+  }).join('\n')
 }
 </script>
 
@@ -146,7 +215,7 @@ const calculateItemTotal = (item: CartItemDisplay) => {
 
     <main class="max-w-2xl mx-auto px-4 py-6">
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-4">
+      <div v-if="menuStore.loading" class="space-y-4">
         <div v-for="n in 3" :key="n" class="bg-white rounded-lg shadow-sm p-4 animate-pulse">
           <div class="flex gap-4">
             <div class="w-20 h-20 bg-gray-200 rounded-lg"></div>
@@ -196,16 +265,25 @@ const calculateItemTotal = (item: CartItemDisplay) => {
                 <h3 class="font-semibold text-gray-900 mb-1">{{ item.item_name }}</h3>
                 <p class="text-sm text-gray-600">{{ formatPrice(item.base_price) }}</p>
 
-                <!-- Extras -->
+                <!-- Extras (Nested) -->
                 <div v-if="item.extra_details.length > 0" class="mt-2 space-y-1">
-                  <p
-                    v-for="extra in item.extra_details"
-                    :key="extra.extra_id"
-                    class="text-xs text-gray-500"
-                  >
-                    + {{ extra.extra_name }}
-                    <span v-if="extra.price_delta !== 0">({{ formatPrice(extra.price_delta) }})</span>
-                  </p>
+                  <template v-for="(extra, idx) in item.extra_details" :key="idx">
+                    <p class="text-xs text-gray-500">
+                      + {{ extra.extra_name }}
+                      <span v-if="extra.price_delta !== 0">({{ formatPrice(extra.price_delta) }})</span>
+                    </p>
+                    <!-- Nested extras -->
+                    <template v-if="extra.nested">
+                      <p
+                        v-for="(nested, nestedIdx) in extra.nested"
+                        :key="nestedIdx"
+                        class="text-xs text-gray-400 ml-3"
+                      >
+                        + {{ nested.extra_name }}
+                        <span v-if="nested.price_delta !== 0">({{ formatPrice(nested.price_delta) }})</span>
+                      </p>
+                    </template>
+                  </template>
                 </div>
 
                 <!-- Quantity and Remove -->

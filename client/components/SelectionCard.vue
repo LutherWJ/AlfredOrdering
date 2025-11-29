@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{
+const props = withDefaults(defineProps<{
   title: string
   subtitle?: string
   imageUrl?: string
@@ -8,7 +8,9 @@ defineProps<{
   isVegetarian?: boolean
   isVegan?: boolean
   isGlutenFree?: boolean
-}>()
+}>(), {
+  isAvailable: true
+})
 
 defineEmits<{
   click: []
@@ -31,7 +33,7 @@ const formatPrice = (price: number) => {
       class="absolute inset-0 bg-gray-900 bg-opacity-40 flex items-center justify-center z-10"
     >
       <span class="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold text-sm">
-        Out of Stock
+        Unavailable
       </span>
     </div>
 

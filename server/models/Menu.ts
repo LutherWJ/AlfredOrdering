@@ -1,6 +1,7 @@
-import mongoose from 'mongoose';
+import mongoose, { InferSchemaType } from 'mongoose';
 
 // Extra option schema (embedded in menu items)
+// Note: This schema is recursive - extras can contain nested extras
 const extraSchema = new mongoose.Schema({
     extra_id: {
         type: mongoose.Schema.Types.ObjectId,
@@ -14,7 +15,8 @@ const extraSchema = new mongoose.Schema({
     price_delta: {
         type: Number,
         required: true,
-        min: 0
+        min: 0,
+        default: 0  // Most nested extras are $0
     },
     is_available: {
         type: Boolean,
@@ -26,13 +28,23 @@ const extraSchema = new mongoose.Schema({
     },
     max_selectable: {
         type: Number,
-        min: 1
+        min: 1,
+        default: 1  // Default to 1 for radio button groups (entree, side, drink)
     },
     display_order: {
         type: Number,
         default: 0
     }
 }, { _id: false });
+
+// Add recursive self-reference for nested extras (e.g., meals with entree/side/drink)
+// This allows extras to have their own extras (e.g., "Entree" -> "Cheeseburger" -> "No Pickles")
+extraSchema.add({
+    extras: {
+        type: [extraSchema],
+        default: []
+    }
+});
 
 // Menu item schema (embedded in menu groups)
 const menuItemSchema = new mongoose.Schema({
@@ -141,5 +153,11 @@ menuSchema.pre('save', function() {
 
 // Index for quick restaurant lookup
 menuSchema.index({ restaurant_id: 1 });
+
+// Export inferred types for sync script
+export type MenuExtraDocument = InferSchemaType<typeof extraSchema>;
+export type MenuItemDocument = InferSchemaType<typeof menuItemSchema>;
+export type MenuGroupDocument = InferSchemaType<typeof menuGroupSchema>;
+export type MenuDocument = InferSchemaType<typeof menuSchema>;
 
 export default mongoose.model('Menus', menuSchema);

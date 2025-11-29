@@ -18,12 +18,21 @@ export function findMenuItem(menu: any, itemId: string) {
 }
 
 /**
- * Finds an extra option within a menu item's extras array
+ * Recursively finds an extra within a menu extra array
+ * Searches the current level and all nested levels
  */
-export function findMenuExtra(menuItem: any, extraId: string) {
-    return menuItem.extras.find((extra: any) =>
-        extra.extra_id.toString() === extraId.toString()
-    );
+export function findMenuExtraRecursive(menuExtras: any[], extraId: string): any {
+    for (const extra of menuExtras) {
+        if (extra.extra_id.toString() === extraId.toString()) {
+            return extra;
+        }
+        // Search nested extras recursively
+        if (extra.extras && extra.extras.length > 0) {
+            const found = findMenuExtraRecursive(extra.extras, extraId);
+            if (found) return found;
+        }
+    }
+    return null;
 }
 
 /**
@@ -47,29 +56,63 @@ export function validateExtraAvailability(menuExtra: any) {
 }
 
 /**
- * Processes ordered extras, validates availability, and creates snapshot objects
- * Returns array of extra snapshots and total price of extras
+ * Recursively validates that required extras at a level have been selected
+ * Throws an error if any required extras are missing
  */
-export function processOrderExtras(menuItem: any, orderedExtras: any[] = []) {
+export function validateRequiredExtras(menuExtras: any[], orderedExtras: any[] = []) {
+    for (const menuExtra of menuExtras) {
+        if (menuExtra.is_required) {
+            const selected = orderedExtras.some(
+                (oe: any) => oe.extra_id === menuExtra.extra_id.toString()
+            );
+            if (!selected) {
+                throw new Error(`${menuExtra.extra_name} is required`);
+            }
+        }
+    }
+}
+
+/**
+ * Recursively processes ordered extras, validates availability, and creates snapshot objects
+ * Supports nested extras for complex menu structures (e.g., meals with entrees that have toppings)
+ * Returns array of extra snapshots and total price of all extras (including nested)
+ */
+export function processOrderExtras(menuExtras: any[], orderedExtras: any[] = []): { orderExtras: any[], extrasTotal: number } {
     const orderExtras = [];
     let extrasTotal = 0;
 
+    // Validate required extras at this level
+    validateRequiredExtras(menuExtras, orderedExtras);
+
     for (const orderedExtra of orderedExtras) {
-        const menuExtra = findMenuExtra(menuItem, orderedExtra.extra_id);
+        // Find the menu extra at this level
+        const menuExtra = menuExtras.find((extra: any) =>
+            extra.extra_id.toString() === orderedExtra.extra_id.toString()
+        );
 
         if (!menuExtra) {
             throw new Error(`Extra ${orderedExtra.extra_id} not found`);
         }
 
+        // Validate availability
         validateExtraAvailability(menuExtra);
 
+        // Recursively process nested extras
+        const nestedResult = processOrderExtras(
+            menuExtra.extras || [],
+            orderedExtra.extras || []
+        );
+
+        // Create snapshot with nested extras
         orderExtras.push({
             extra_id: menuExtra.extra_id,
             extra_name: menuExtra.extra_name,
-            extra_price: menuExtra.price_delta
+            extra_price: menuExtra.price_delta,
+            extras: nestedResult.orderExtras  // Include nested snapshots
         });
 
-        extrasTotal += menuExtra.price_delta;
+        // Add this extra's price plus all nested prices
+        extrasTotal += menuExtra.price_delta + nestedResult.extrasTotal;
     }
 
     return { orderExtras, extrasTotal };
@@ -90,7 +133,7 @@ export function processOrderItem(menu: any, orderedItem: any) {
     validateItemAvailability(menuItem);
 
     const { orderExtras, extrasTotal } = processOrderExtras(
-        menuItem,
+        menuItem.extras,
         orderedItem.extras
     );
 

@@ -2,24 +2,25 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCartStore } from '../store/cartStore'
-import type { Menu, MenuItem } from '../../shared/types'
-import { getMenus } from '../services/menuService'
+import { useMenuStore } from '../store/menuStore'
+import type { MenuItem, SelectedExtra, MenuExtra } from '../../shared/types'
 import NavigationHeader from '../components/NavigationHeader.vue'
 import QuantitySelector from '../components/QuantitySelector.vue'
-import ExtraCheckbox from '../components/ExtraCheckbox.vue'
+import ExtraSelector from '../components/ExtraSelector.vue'
 
 const router = useRouter()
 const route = useRoute()
 const cartStore = useCartStore()
+const menuStore = useMenuStore()
 
-const menu = ref<Menu | null>(null)
-const loading = ref(true)
-const error = ref<string | null>(null)
 const quantity = ref(1)
-const selectedExtraIds = ref<Set<string>>(new Set())
+const selectedExtras = ref<SelectedExtra[]>([])
 
 const restaurantId = computed(() => route.params.restaurantId as string)
 const itemId = computed(() => route.params.itemId as string)
+
+// Get menu from store
+const menu = computed(() => menuStore.getMenuByRestaurantId(restaurantId.value))
 
 // Find the selected item
 const selectedItem = computed<MenuItem | undefined>(() => {
@@ -31,62 +32,69 @@ const selectedItem = computed<MenuItem | undefined>(() => {
   return undefined
 })
 
-// Filter available extras
+// Filter available extras (top-level only for display)
 const availableExtras = computed(() => {
   if (!selectedItem.value) return []
   return selectedItem.value.extras.filter(extra => extra.is_available)
 })
 
+// Recursively check if all required extras are selected
+function checkRequiredExtras(menuExtras: MenuExtra[], selected: SelectedExtra[]): boolean {
+  for (const menuExtra of menuExtras) {
+    if (menuExtra.is_required && menuExtra.is_available) {
+      const isSelected = selected.some(se => se.extra_id === menuExtra.extra_id)
+      if (!isSelected) return false
+
+      // If this required extra has nested extras, check them too
+      if (menuExtra.extras && menuExtra.extras.length > 0) {
+        const selectedExtra = selected.find(se => se.extra_id === menuExtra.extra_id)
+        if (selectedExtra && selectedExtra.extras) {
+          const nestedValid = checkRequiredExtras(menuExtra.extras, selectedExtra.extras)
+          if (!nestedValid) return false
+        }
+      }
+    }
+  }
+  return true
+}
+
 // Check if all required extras are selected
 const allRequiredSelected = computed(() => {
   if (!selectedItem.value) return false
-  const requiredExtras = selectedItem.value.extras.filter(e => e.is_required && e.is_available)
-  return requiredExtras.every(extra => selectedExtraIds.value.has(extra.extra_id))
+  return checkRequiredExtras(selectedItem.value.extras, selectedExtras.value)
 })
+
+// Recursively calculate total from nested extras
+function calculateExtrasTotal(menuExtras: MenuExtra[], selected: SelectedExtra[]): number {
+  let total = 0
+
+  for (const selectedExtra of selected) {
+    const menuExtra = menuExtras.find(me => me.extra_id === selectedExtra.extra_id)
+    if (menuExtra) {
+      total += menuExtra.price_delta
+
+      // Add nested extras total
+      if (menuExtra.extras && selectedExtra.extras) {
+        total += calculateExtrasTotal(menuExtra.extras, selectedExtra.extras)
+      }
+    }
+  }
+
+  return total
+}
 
 // Calculate total price
 const totalPrice = computed(() => {
   if (!selectedItem.value) return 0
 
-  let extrasTotal = 0
-  selectedExtraIds.value.forEach(extraId => {
-    const extra = selectedItem.value!.extras.find(e => e.extra_id === extraId)
-    if (extra) {
-      extrasTotal += extra.price_delta
-    }
-  })
-
+  const extrasTotal = calculateExtrasTotal(selectedItem.value.extras, selectedExtras.value)
   return (selectedItem.value.base_price + extrasTotal) * quantity.value
 })
 
 onMounted(async () => {
-  try {
-    const data = await getMenus(restaurantId.value)
-    if (data && data.length > 0) {
-      menu.value = data[0]
-
-      // Verify item exists
-      if (!selectedItem.value) {
-        error.value = 'Item not found'
-      }
-    } else {
-      error.value = 'Menu not found'
-    }
-  } catch (e) {
-    error.value = 'Unable to load item details'
-    console.error(e)
-  } finally {
-    loading.value = false
-  }
+  // Fetch menu from store (will use cache if available)
+  await menuStore.fetchMenuByRestaurantId(restaurantId.value)
 })
-
-const toggleExtra = (extraId: string) => {
-  if (selectedExtraIds.value.has(extraId)) {
-    selectedExtraIds.value.delete(extraId)
-  } else {
-    selectedExtraIds.value.add(extraId)
-  }
-}
 
 const addToCart = () => {
   if (!selectedItem.value || !allRequiredSelected.value) return
@@ -94,7 +102,7 @@ const addToCart = () => {
   cartStore.addItem(
     selectedItem.value.item_id,
     quantity.value,
-    Array.from(selectedExtraIds.value)
+    selectedExtras.value
   )
 
   // Navigate back to items list to allow adding more items
@@ -115,7 +123,7 @@ const formatPrice = (price: number) => {
 
     <main class="max-w-2xl mx-auto px-4 py-6">
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-4">
+      <div v-if="menuStore.loading" class="space-y-4">
         <div class="bg-white rounded-lg shadow-sm p-6 animate-pulse">
           <div class="w-full h-48 bg-gray-200 rounded-lg mb-4"></div>
           <div class="h-6 bg-gray-200 rounded w-3/4 mb-3"></div>
@@ -125,12 +133,12 @@ const formatPrice = (price: number) => {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+      <div v-else-if="menuStore.error || !selectedItem" class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
         <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <h2 class="text-lg font-semibold text-red-900 mb-2">Unable to Load Item</h2>
-        <p class="text-red-700 mb-4">{{ error }}</p>
+        <p class="text-red-700 mb-4">{{ menuStore.error || 'Item not found' }}</p>
       </div>
 
       <!-- Item Details -->
@@ -172,19 +180,19 @@ const formatPrice = (price: number) => {
           </div>
         </div>
 
-        <!-- Extras Section -->
+        <!-- Extras Section (supports nested extras recursively) -->
         <div v-if="availableExtras.length > 0" class="bg-white rounded-lg shadow-sm p-6">
           <h3 class="text-lg font-semibold text-gray-900 mb-1">Customize Your Order</h3>
           <p class="text-sm text-gray-600 mb-4">
             <span class="text-red-600">*</span> Required selections
           </p>
-          <div class="space-y-2">
-            <ExtraCheckbox
+          <div class="space-y-3">
+            <ExtraSelector
               v-for="extra in availableExtras"
               :key="extra.extra_id"
               :extra="extra"
-              :selected="selectedExtraIds.has(extra.extra_id)"
-              @toggle="toggleExtra(extra.extra_id)"
+              v-model="selectedExtras"
+              :depth="0"
             />
           </div>
         </div>

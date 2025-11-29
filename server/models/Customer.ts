@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose, { InferSchemaType } from 'mongoose';
 
 const customerSchema = new mongoose.Schema({
     fname: {
@@ -44,5 +44,8 @@ const customerSchema = new mongoose.Schema({
 customerSchema.pre('save', function() {
     this.updated_at = new Date();
 });
+
+// Export inferred type for sync script
+export type CustomerDocument = InferSchemaType<typeof customerSchema>;
 
 export default mongoose.model('Customers', customerSchema);

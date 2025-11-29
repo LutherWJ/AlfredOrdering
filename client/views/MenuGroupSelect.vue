@@ -1,21 +1,22 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useCartStore } from '../store/cartStore'
-import type { Menu, MenuGroup } from '../../shared/types'
-import { getMenus } from '../services/menuService'
+import { useMenuStore } from '../store/menuStore'
+import type { MenuGroup } from '../../shared/types'
 import NavigationHeader from '../components/NavigationHeader.vue'
 import SelectionCard from '../components/SelectionCard.vue'
+import FloatingCheckoutButton from '../components/FloatingCheckoutButton.vue'
 
 const router = useRouter()
 const route = useRoute()
 const cartStore = useCartStore()
-
-const menu = ref<Menu | null>(null)
-const loading = ref(true)
-const error = ref<string | null>(null)
+const menuStore = useMenuStore()
 
 const restaurantId = computed(() => route.params.restaurantId as string)
+
+// Get menu from store
+const menu = computed(() => menuStore.getMenuByRestaurantId(restaurantId.value))
 
 // Filter and sort active groups
 const activeGroups = computed(() => {
@@ -26,20 +27,12 @@ const activeGroups = computed(() => {
 })
 
 onMounted(async () => {
-  try {
-    const data = await getMenus(restaurantId.value)
-    if (data && data.length > 0) {
-      menu.value = data[0]
-      // Set restaurant in cart store
-      cartStore.setRestaurant(menu.value.restaurant_id)
-    } else {
-      error.value = 'Menu not found'
-    }
-  } catch (e) {
-    error.value = 'Unable to load menu'
-    console.error(e)
-  } finally {
-    loading.value = false
+  // Fetch menu from store (will use cache if available)
+  const fetchedMenu = await menuStore.fetchMenuByRestaurantId(restaurantId.value)
+
+  if (fetchedMenu) {
+    // Set restaurant in cart store
+    cartStore.setRestaurant(fetchedMenu.restaurant_id)
   }
 })
 
@@ -64,7 +57,7 @@ const selectGroup = (group: MenuGroup) => {
       </div>
 
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-4">
+      <div v-if="menuStore.loading" class="space-y-4">
         <div v-for="n in 4" :key="n" class="bg-white rounded-lg shadow-sm p-6 animate-pulse">
           <div class="h-6 bg-gray-200 rounded w-3/4 mb-3"></div>
           <div class="h-4 bg-gray-200 rounded w-1/2"></div>
@@ -72,12 +65,12 @@ const selectGroup = (group: MenuGroup) => {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+      <div v-else-if="menuStore.error || !menu" class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
         <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <h2 class="text-lg font-semibold text-red-900 mb-2">Unable to Load Menu</h2>
-        <p class="text-red-700 mb-4">{{ error }}</p>
+        <p class="text-red-700 mb-4">{{ menuStore.error || 'Menu not found' }}</p>
       </div>
 
       <!-- Empty State -->
@@ -101,5 +94,8 @@ const selectGroup = (group: MenuGroup) => {
         />
       </div>
     </main>
+
+    <!-- Floating Checkout Button -->
+    <FloatingCheckoutButton />
   </div>
 </template>

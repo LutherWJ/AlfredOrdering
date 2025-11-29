@@ -15,4 +15,4 @@ db.createUser({
     ]
 });
 
-print('✅ Database user created successfully');
+print('Database user created successfully');

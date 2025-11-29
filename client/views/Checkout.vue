@@ -2,40 +2,74 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../store/cartStore'
-import type { Menu } from '../../shared/types'
-import { getMenus } from '../services/menuService'
+import { useMenuStore } from '../store/menuStore'
+import type { Menu, MenuItem, MenuExtra, SelectedExtra } from '../../shared/types'
 import { SALES_TAX } from '../../shared/constants'
 import NavigationHeader from '../components/NavigationHeader.vue'
 import api from '../services/api'
 
 const router = useRouter()
 const cartStore = useCartStore()
+const menuStore = useMenuStore()
 
-const menu = ref<Menu | null>(null)
-const loading = ref(true)
+const menu = computed(() => {
+  if (!cartStore.restaurant_id) return null
+  return menuStore.getMenuByRestaurantId(cartStore.restaurant_id)
+})
+
 const submitting = ref(false)
 const error = ref<string | null>(null)
 const pickupTime = ref<string>('')
 const specialInstructions = ref<string>('')
 
-// Calculate totals using same logic as Cart
+// Helper function to recursively find a menu extra by ID
+function findMenuExtra(extras: MenuExtra[], extraId: string): MenuExtra | undefined {
+  for (const extra of extras) {
+    if (extra.extra_id === extraId) {
+      return extra
+    }
+    if (extra.extras && extra.extras.length > 0) {
+      const found = findMenuExtra(extra.extras, extraId)
+      if (found) return found
+    }
+  }
+  return undefined
+}
+
+// Recursively calculate total from nested extras
+function calculateExtrasTotal(menuExtras: MenuExtra[], selectedExtras: SelectedExtra[]): number {
+  let total = 0
+
+  for (const selected of selectedExtras) {
+    const menuExtra = findMenuExtra(menuExtras, selected.extra_id)
+    if (menuExtra) {
+      total += menuExtra.price_delta
+
+      // Add nested extras total
+      if (selected.extras && selected.extras.length > 0) {
+        total += calculateExtrasTotal(menuExtras, selected.extras)
+      }
+    }
+  }
+
+  return total
+}
+
+// Calculate totals using same logic as Cart (with nested extras support)
 const subtotal = computed(() => {
   if (!menu.value) return 0
 
   return cartStore.items.reduce((sum, cartItem) => {
     // Find menu item
-    let menuItem
+    let menuItem: MenuItem | undefined
     for (const group of menu.value!.groups) {
       menuItem = group.items.find(i => i.item_id === cartItem.item_id)
       if (menuItem) break
     }
     if (!menuItem) return sum
 
-    // Calculate extras total
-    const extrasTotal = cartItem.extras.reduce((eSum, extraId) => {
-      const extra = menuItem.extras.find(e => e.extra_id === extraId)
-      return eSum + (extra?.price_delta || 0)
-    }, 0)
+    // Calculate extras total (supports nested extras)
+    const extrasTotal = calculateExtrasTotal(menuItem.extras, cartItem.extras)
 
     return sum + (menuItem.base_price + extrasTotal) * cartItem.quantity
   }, 0)
@@ -50,17 +84,8 @@ onMounted(async () => {
     return
   }
 
-  try {
-    const data = await getMenus(cartStore.restaurant_id)
-    if (data && data.length > 0) {
-      menu.value = data[0]
-    }
-  } catch (e) {
-    console.error('Failed to load menu:', e)
-    error.value = 'Unable to load order details'
-  } finally {
-    loading.value = false
-  }
+  // Fetch menu from store (will use cache if available)
+  await menuStore.fetchMenuByRestaurantId(cartStore.restaurant_id)
 })
 
 const submitOrder = async () => {
@@ -127,7 +152,7 @@ const minPickupTime = computed(() => {
 
     <main class="max-w-2xl mx-auto px-4 py-6">
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-4">
+      <div v-if="menuStore.loading" class="space-y-4">
         <div v-for="n in 3" :key="n" class="bg-white rounded-lg shadow-sm p-6 animate-pulse">
           <div class="h-6 bg-gray-200 rounded w-3/4 mb-3"></div>
           <div class="h-4 bg-gray-200 rounded w-1/2"></div>

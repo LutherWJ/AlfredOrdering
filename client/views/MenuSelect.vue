@@ -1,37 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import type { Menu } from '../../shared/types'
-import { getMenus } from '../services/menuService'
+import { useMenuStore } from '../store/menuStore'
 
 const router = useRouter()
-const menus = ref<Menu[]>([])
-const loading = ref(true)
-const error = ref<string | null>(null)
+const menuStore = useMenuStore()
 
 onMounted(async () => {
-  try {
-    const data = await getMenus()
-    if (data) {
-      // Filter only active menus
-      menus.value = data.filter(menu => menu.is_active)
-    } else {
-      error.value = 'Failed to load menus'
-    }
-  } catch (e) {
-    error.value = 'Unable to connect to server'
-    console.error(e)
-  } finally {
-    loading.value = false
-  }
+  await menuStore.fetchMenus()
 })
 
 const selectMenu = (restaurantId: string) => {
   router.push(`/menu/${restaurantId}`)
 }
 
-const reloadPage = () => {
-  window.location.reload()
+const reloadPage = async () => {
+  await menuStore.fetchMenus(true) // Force refresh
 }
 </script>
 
@@ -47,7 +31,7 @@ const reloadPage = () => {
 
     <main class="max-w-2xl mx-auto px-4 py-6">
       <!-- Loading State -->
-      <div v-if="loading" class="space-y-4">
+      <div v-if="menuStore.loading" class="space-y-4">
         <div v-for="n in 3" :key="n" class="bg-white rounded-lg shadow-sm p-6 animate-pulse">
           <div class="h-6 bg-gray-200 rounded w-3/4 mb-3"></div>
           <div class="h-4 bg-gray-200 rounded w-1/2 mb-2"></div>
@@ -56,12 +40,12 @@ const reloadPage = () => {
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+      <div v-else-if="menuStore.error" class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
         <svg class="w-12 h-12 text-red-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <h2 class="text-lg font-semibold text-red-900 mb-2">Unable to Load Menus</h2>
-        <p class="text-red-700 mb-4">{{ error }}</p>
+        <p class="text-red-700 mb-4">{{ menuStore.error }}</p>
         <button
           @click="reloadPage"
           class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
@@ -71,7 +55,7 @@ const reloadPage = () => {
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="menus.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
+      <div v-else-if="menuStore.activeMenus.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
         <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
         </svg>
@@ -82,7 +66,7 @@ const reloadPage = () => {
       <!-- Menu List -->
       <div v-else class="space-y-4">
         <button
-          v-for="menu in menus"
+          v-for="menu in menuStore.activeMenus"
           :key="menu.id"
           @click="selectMenu(menu.restaurant_id)"
           class="w-full bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 p-6 text-left border border-gray-200 hover:border-blue-500 active:scale-98"
@@ -132,7 +116,6 @@ const reloadPage = () => {
   transform: scale(0.98);
 }
 
-/* Ensure proper touch targets on mobile */
 @media (max-width: 640px) {
   button {
     min-height: 44px; /* Apple's recommended touch target size */

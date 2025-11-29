@@ -1,6 +1,7 @@
-import mongoose from 'mongoose';
+import mongoose, { InferSchemaType } from 'mongoose';
 
 // Order extra schema (snapshot of extra at order time)
+// Note: This schema is recursive to support nested extras (e.g., meals)
 const orderExtraSchema = new mongoose.Schema({
     extra_id: mongoose.Schema.Types.ObjectId,
     extra_name: {
@@ -12,6 +13,16 @@ const orderExtraSchema = new mongoose.Schema({
         required: true
     }
 }, { _id: false });
+
+// Add recursive self-reference for nested extras
+// This preserves the hierarchical structure in order history
+// Example: "Entree" -> "Cheeseburger" -> "Extra Cheese"
+orderExtraSchema.add({
+    extras: {
+        type: [orderExtraSchema],
+        default: []
+    }
+});
 
 // Order item schema (snapshot of item at order time)
 const orderItemSchema = new mongoose.Schema({
@@ -169,5 +180,12 @@ orderSchema.index({ order_number: 1 });
 orderSchema.index({ 'customer.customer_id': 1, created_at: -1 }); // Customer order history
 orderSchema.index({ status: 1, created_at: -1 }); // Kitchen display (pending/preparing orders)
 orderSchema.index({ created_at: -1 }); // Recent orders
+
+// Export inferred types for sync script
+export type OrderExtraDocument = InferSchemaType<typeof orderExtraSchema>;
+export type OrderItemDocument = InferSchemaType<typeof orderItemSchema>;
+export type CustomerSnapshotDocument = InferSchemaType<typeof customerSnapshotSchema>;
+export type RestaurantSnapshotDocument = InferSchemaType<typeof restaurantSnapshotSchema>;
+export type OrderDocument = InferSchemaType<typeof orderSchema>;
 
 export default mongoose.model('Orders', orderSchema);

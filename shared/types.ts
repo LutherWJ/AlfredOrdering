@@ -65,6 +65,8 @@ export interface UpdateCustomerRequest {
 
 /**
  * Menu item extra/add-on option
+ * Note: This is recursive - extras can contain nested extras for complex menu structures
+ * Example: Meal -> Entree -> Cheeseburger -> Toppings
  */
 export interface MenuExtra {
     extra_id: string;
@@ -75,6 +77,7 @@ export interface MenuExtra {
     is_required: boolean;
     max_selectable?: number;
     display_order: number;
+    extras: MenuExtra[];  // Recursive: nested extras
 }
 
 /**
@@ -130,11 +133,13 @@ export type OrderStatus = 'pending' | 'preparing' | 'ready' | 'completed' | 'can
 
 /**
  * Extra snapshot in order (preserves pricing at order time)
+ * Note: This is recursive to preserve the hierarchical structure of nested extras
  */
 export interface OrderExtra {
     extra_id: string;
     extra_name: string;
     extra_price: number;
+    extras: OrderExtra[];  // Recursive: nested extras snapshot
 }
 
 /**
@@ -195,6 +200,14 @@ export interface Order {
 }
 
 /**
+ * Selected extra in order request (recursive to support nested extras)
+ */
+export interface SelectedExtra {
+    extra_id: string;
+    extras?: SelectedExtra[];  // Nested selections (e.g., Entree -> Cheeseburger -> Toppings)
+}
+
+/**
  * Request to create new order (what frontend sends)
  * Note: customer_id comes from JWT token via authenticateToken middleware
  */
@@ -203,7 +216,7 @@ export interface CreateOrderRequest {
     items: {
         item_id: string;
         quantity: number;
-        extras: string[]; // Array of extra_ids
+        extras: SelectedExtra[]; // Array of selected extras (can be nested)
     }[];
     pickup_time_requested?: string; // ISO date string
     special_instructions?: string;
