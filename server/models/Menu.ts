@@ -1,4 +1,4 @@
-import mongoose, { InferSchemaType } from 'mongoose';
+import mongoose, { type InferSchemaType } from 'mongoose';
 
 // Extra option schema (embedded in menu items)
 // Note: This schema is recursive - extras can contain nested extras
