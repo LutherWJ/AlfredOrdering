@@ -59,8 +59,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - CORS_ORIGIN=http://localhost:5173
-      - MONGODB_URI=mongodb://alfred_user:alfred_password@mongodb:27017/alfred_ordering_db
+      - MONGODB_URI=mongodb://admin:securepassword@mongodb:27017/alfred_ordering_db?authSource=admin
       - MYSQL_URI=mysql://alfred_reporting_user:alfred_reporting_password@mysql:3306/alfred_reporting_db
     depends_on:
       mongodb:

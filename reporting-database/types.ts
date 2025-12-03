@@ -1,36 +1,7 @@
-import type { Types } from 'mongoose';
-import type { CustomerDocument } from '../server/models/Customer';
-import type {
-    MenuDocument,
-    MenuGroupDocument,
-    MenuItemDocument,
-    MenuExtraDocument
-} from '../server/models/Menu';
-import type {
-    OrderDocument,
-    OrderItemDocument,
-    OrderExtraDocument,
-    CustomerSnapshotDocument,
-    RestaurantSnapshotDocument
-} from '../server/models/Order';
-
-type ObjectIdToString<T> = {
-    [K in keyof T]: T[K] extends Types.ObjectId
-        ? string
-        : T[K] extends Types.ObjectId | undefined
-        ? string | undefined
-        : T[K] extends Array<infer U>
-        ? Array<ObjectIdToString<U>>
-        : T[K] extends object
-        ? ObjectIdToString<T[K]>
-        : T[K];
-};
+import type {Types} from 'mongoose';
+import type {CustomerDocument} from '../server/models/Customer';
 
 type WithId<T> = T & { _id: string };
-
-export interface CustomerRow extends Omit<ObjectIdToString<CustomerDocument>, '_id'> {
-    customer_id: string;
-}
 
 export interface RestaurantRow {
     restaurant_id: string;
@@ -84,7 +55,93 @@ export interface MenuExtraRow {
     updated_at: Date;
 }
 
+// ============================================================================
+// MongoDB Order Document Types (what MongoDB actually returns)
+// ============================================================================
+
+/**
+ * Order extra snapshot (recursive to support nested extras)
+ * Matches OrderExtraDocument from Order.ts schema
+ */
+export interface OrderExtraSnapshot {
+    extra_id: string;
+    extra_name: string;
+    extra_price: number;
+    extras: OrderExtraSnapshot[];  // Recursive nesting
+}
+
+/**
+ * Order item snapshot
+ * Matches OrderItemDocument from Order.ts schema
+ */
+export interface OrderItemSnapshot {
+    order_item_id: string;
+    menu_item_id: string;
+    item_name: string;
+    description?: string;
+    unit_price: number;
+    quantity: number;
+    extras: OrderExtraSnapshot[];
+    line_subtotal: number;
+}
+
+/**
+ * Customer snapshot embedded in order
+ * Matches CustomerSnapshotDocument from Order.ts schema
+ */
+export interface OrderCustomerSnapshot {
+    customer_id: string;
+    name: string;
+    preferred_name?: string;
+    email: string;
+    phone?: string;
+    student_id?: string;
+}
+
+/**
+ * Restaurant snapshot embedded in order
+ * Matches RestaurantSnapshotDocument from Order.ts schema
+ */
+export interface OrderRestaurantSnapshot {
+    restaurant_id: string;
+    name: string;
+    location: string;
+    phone?: string;
+}
+
+/**
+ * Complete MongoDB order document (what you get from Order.find())
+ * Matches OrderDocument from Order.ts schema
+ * This is the actual structure returned from MongoDB queries
+ */
 export interface OrderRow {
+    _id: string;  // MongoDB document ID
+    order_number: string;
+    customer: OrderCustomerSnapshot;  // Embedded snapshot
+    restaurant: OrderRestaurantSnapshot;  // Embedded snapshot
+    items: OrderItemSnapshot[];  // Array of embedded snapshots
+    status: 'pending' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+    order_datetime: Date;
+    pickup_time_requested?: Date;
+    pickup_time_ready?: Date;
+    subtotal_amount: number;
+    tax_amount: number;
+    total_amount: number;
+    special_instructions?: string;
+    is_cancelled: boolean;
+    cancelled_at?: Date;
+    created_at: Date;
+    updated_at: Date;
+}
+
+// ============================================================================
+// Normalized Relational Database Types (for sync to MySQL/PostgreSQL)
+// ============================================================================
+
+/**
+ * Order row in normalized database (flattened, no embedded documents)
+ */
+export interface NormalizedOrderRow {
     order_id: string;
     order_number: string;
     customer_id: string;
@@ -103,7 +160,7 @@ export interface OrderRow {
     updated_at: Date;
 }
 
-export interface OrderCustomerSnapshotRow {
+export interface NormalizedOrderCustomerSnapshotRow {
     order_id: string;
     customer_id: string;
     name: string;
@@ -113,7 +170,7 @@ export interface OrderCustomerSnapshotRow {
     student_id: string | undefined;
 }
 
-export interface OrderRestaurantSnapshotRow {
+export interface NormalizedOrderRestaurantSnapshotRow {
     order_id: string;
     restaurant_id: string;
     name: string;
@@ -121,7 +178,7 @@ export interface OrderRestaurantSnapshotRow {
     phone: string | undefined;
 }
 
-export interface OrderItemRow {
+export interface NormalizedOrderItemRow {
     order_item_id: string;
     order_id: string;
     menu_item_id: string;
@@ -133,7 +190,7 @@ export interface OrderItemRow {
     created_at: Date;
 }
 
-export interface OrderItemExtraRow {
+export interface NormalizedOrderItemExtraRow {
     order_extra_id: string;
     order_item_id: string;
     parent_order_extra_id: string | null;
@@ -150,12 +207,16 @@ export interface DenormalizedMenu {
     extras: MenuExtraRow[];
 }
 
+/**
+ * Denormalized order structure for syncing to normalized database
+ * Takes MongoDB embedded document and flattens it for relational tables
+ */
 export interface DenormalizedOrder {
-    order: OrderRow;
-    customer_snapshot: OrderCustomerSnapshotRow;
-    restaurant_snapshot: OrderRestaurantSnapshotRow;
-    items: OrderItemRow[];
-    extras: OrderItemExtraRow[];
+    order: NormalizedOrderRow;
+    customer_snapshot: NormalizedOrderCustomerSnapshotRow;
+    restaurant_snapshot: NormalizedOrderRestaurantSnapshotRow;
+    items: NormalizedOrderItemRow[];
+    extras: NormalizedOrderItemExtraRow[];
 }
 
 export interface SyncStats {
@@ -170,4 +231,11 @@ export interface SyncStats {
     errors: string[];
     started_at: Date;
     completed_at?: Date;
+}
+
+export interface NormalizedEntry {
+    restaurantRow: RestaurantRow,
+    menuGroupRow: MenuGroupRow,
+    menuItemRow: MenuItemRow,
+    menuExtraRow: MenuExtraRow
 }

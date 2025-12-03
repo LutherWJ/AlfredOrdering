@@ -6,7 +6,7 @@ import { useMenuStore } from '../store/menuStore'
 import type { Menu, MenuItem, MenuExtra, SelectedExtra } from '../../shared/types'
 import { SALES_TAX } from '../../shared/constants'
 import NavigationHeader from '../components/NavigationHeader.vue'
-import api from '../services/api'
+import { postOrder } from '../services/orderService'
 
 const router = useRouter()
 const cartStore = useCartStore()
@@ -107,22 +107,14 @@ const submitOrder = async () => {
     const orderRequest = cartStore.buildOrderRequest()
 
     // Submit order
-    const response = await api.post('/orders', orderRequest)
+    const order = await postOrder(orderRequest)
 
-    if (response.status === 201) {
-      // Order created successfully
-      const order = response.data
+    // Clear cart
+    cartStore.clearCart()
 
-      // Clear cart
-      cartStore.clearCart()
-
-      // Navigate to order confirmation or success page
-      // For now, just go back to menus with alert
-      alert(`Order placed successfully! Order #${order.order_number}`)
-      router.push('/menus')
-    } else {
-      error.value = 'Failed to place order. Please try again.'
-    }
+    // Navigate back to home page to see order
+    alert(`Order placed successfully! Order #${order.order_number}`)
+    router.push('/')
   } catch (e: any) {
     console.error('Order submission failed:', e)
     error.value = e.response?.data?.error || 'Failed to place order. Please try again.'
@@ -148,6 +140,7 @@ const minPickupTime = computed(() => {
     <NavigationHeader
       title="Checkout"
       :show-back="true"
+      back-route="/cart"
     />
 
     <main class="max-w-2xl mx-auto px-4 py-6">

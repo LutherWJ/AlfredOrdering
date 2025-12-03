@@ -113,7 +113,7 @@ CREATE TABLE orders
     order_number          VARCHAR(20)    NOT NULL UNIQUE,
     customer_id           VARCHAR(24) NOT NULL,
     restaurant_id         VARCHAR(24) NOT NULL,
-    status                ENUM('pending', 'preparing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    order_status                ENUM('pending', 'preparing', 'ready', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
     order_datetime        TIMESTAMP      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     pickup_time_requested TIMESTAMP NULL,
     pickup_time_ready     TIMESTAMP NULL,

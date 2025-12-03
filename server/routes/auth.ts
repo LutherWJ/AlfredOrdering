@@ -28,7 +28,9 @@ router.post('/login', async (req, res) => {
 
         res.cookie('token', token, {
             httpOnly: true,
-            secure: false,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            path: '/',
             maxAge: 24 * 60 * 60 * 1000 // 24 hours
         });
 
@@ -40,7 +42,7 @@ router.post('/login', async (req, res) => {
 });
 
 router.post('/logout', async (req, res) => {
-    res.clearCookie('token');
+    res.clearCookie('token', { path: '/' });
     res.send({ message: 'Successfully logged out' });
 })
 

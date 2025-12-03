@@ -13,6 +13,9 @@ RUN bun install --frozen-lockfile
 # Copy source code
 COPY . .
 
+# Build the frontend
+RUN bun run build:client
+
 # Expose the application port
 EXPOSE 3000
 

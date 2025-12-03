@@ -1,24 +1,26 @@
 import api from "./api";
-import {CreateOrderRequest, type Order} from "../../shared/types";
+import type {CreateOrderRequest, Order} from "../../shared/types";
 
 export const postOrder = async (order: CreateOrderRequest) => {
     try {
-        const res = await api.post('/orders', order);
+        const res = await api.post('/order', order);
+        return res.data;
     }
     catch (e) {
         console.error(e);
+        throw e;
     }
 }
 
-export const getMyOrders = async (): Promise<Order | null> => {
+export const getMyOrders = async (): Promise<Order[]> => {
     try{
-        const res = await api.get('/my-orders');
+        const res = await api.get('/order/my-orders');
         if (res.status === 200) {
             return res.data;
         }
-        return null;
+        return [];
     } catch (e) {
         console.error(e);
-        return null;
+        return [];
     }
 }

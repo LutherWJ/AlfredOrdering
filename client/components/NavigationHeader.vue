@@ -2,16 +2,21 @@
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../store/cartStore'
 
-defineProps<{
+const props = defineProps<{
   title: string
   showBack?: boolean
+  backRoute?: string
 }>()
 
 const router = useRouter()
 const cartStore = useCartStore()
 
 const goBack = () => {
-  router.back()
+  if (props.backRoute) {
+    router.push(props.backRoute)
+  } else {
+    router.back()
+  }
 }
 
 const goToCart = () => {
