@@ -4,13 +4,11 @@ import { getMenus } from "../services/menuService"
 import type { Menu } from "../../shared/types"
 
 export const useMenuStore = defineStore("menuStore", () => {
-    // State
     const menus = ref<Menu[]>([])
     const loading = ref(false)
     const error = ref<string | null>(null)
     const lastFetched = ref<number | null>(null)
-    // Cache duration in milliseconds (5 minutes)
-    const CACHE_DURATION = 5 * 60 * 1000
+    const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
     // Getters
     const activeMenus = computed(() =>
@@ -28,9 +26,9 @@ export const useMenuStore = defineStore("menuStore", () => {
     })
 
     // Actions
-    async function fetchMenus(force = false) {
-        // Return cached data if valid and not forced
-        if (isCacheValid.value && !force && menus.value.length > 0) {
+    async function fetchMenus() {
+        // Return cached data if valid
+        if (isCacheValid.value && menus.value.length > 0) {
             return menus.value
         }
 
@@ -56,15 +54,15 @@ export const useMenuStore = defineStore("menuStore", () => {
         }
     }
 
-    async function fetchMenuByRestaurantId(restaurantId: string, force = false) {
+    async function fetchMenuByRestaurantId(restaurantId: string) {
         // Check if we already have this menu and cache is valid
         const cachedMenu = getMenuByRestaurantId.value(restaurantId)
-        if (cachedMenu && isCacheValid.value && !force) {
+        if (cachedMenu && isCacheValid.value) {
             return cachedMenu
         }
 
         // If we don't have any menus or cache is invalid, fetch all menus
-        await fetchMenus(force)
+        await fetchMenus()
 
         return getMenuByRestaurantId.value(restaurantId)
     }
@@ -76,18 +74,13 @@ export const useMenuStore = defineStore("menuStore", () => {
     }
 
     return {
-        // State
         menus,
         loading,
         error,
         lastFetched,
-
-        // Getters
         activeMenus,
         getMenuByRestaurantId,
         isCacheValid,
-
-        // Actions
         fetchMenus,
         fetchMenuByRestaurantId,
         clearCache

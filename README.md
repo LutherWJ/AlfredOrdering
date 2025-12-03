@@ -35,7 +35,7 @@ Before you begin, ensure you have the following installed:
 
 ### 1. Clone the repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/LutherWJ/AlfredOrdering
 cd AlfredOrdering
 ```
 
@@ -171,15 +171,3 @@ If you're developing on this project, please refer to `CLAUDE.md` for detailed d
 - Database design patterns
 - API endpoints reference
 - Common development tasks
-
----
-
-## License
-
-[Specify your license here]
-
----
-
-## Contact
-
-For questions or issues, please contact [your-email@example.com]

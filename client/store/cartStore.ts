@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import type { CreateOrderRequest, SelectedExtra } from '../../shared/types';
 
-// Load cart from localStorage
 function loadCartFromStorage() {
   try {
     const stored = localStorage.getItem('cart');
@@ -24,14 +23,12 @@ export const useCartStore = defineStore('cart', {
 
   getters: {
     itemCount: (state) => state.items.reduce((sum, item) => sum + item.quantity, 0),
-    // Check if cart has items
     hasItems: (state) => state.items.length > 0,
-    // Check if restaurant is set
     hasRestaurant: (state) => state.restaurant_id !== null,
   },
 
   actions: {
-    // Save cart to localStorage
+    // Cross session cart persistence
     saveToStorage() {
       try {
         localStorage.setItem('cart', JSON.stringify(this.$state));
@@ -50,7 +47,7 @@ export const useCartStore = defineStore('cart', {
       this.saveToStorage();
     },
 
-    // Add item to cart with selected extras (supports nested extras for meals)
+    // Add item to cart with selected extras
     addItem(item_id: string, quantity: number, extras: SelectedExtra[]) {
       this.items.push({
         item_id,
@@ -61,7 +58,6 @@ export const useCartStore = defineStore('cart', {
       this.saveToStorage();
     },
 
-    // Update item quantity
     updateItemQuantity(index: number, quantity: number) {
       if (quantity <= 0) {
         this.removeItem(index);
@@ -71,13 +67,11 @@ export const useCartStore = defineStore('cart', {
       }
     },
 
-    // Remove item from cart by index
     removeItem(index: number) {
       this.items.splice(index, 1);
       this.saveToStorage();
     },
 
-    // Clear entire cart
     clearCart() {
       this.restaurant_id = null;
       this.items = [];
@@ -86,13 +80,11 @@ export const useCartStore = defineStore('cart', {
       this.saveToStorage();
     },
 
-    // Set pickup time
     setPickupTime(time: string | null) {
       this.pickup_time_requested = time;
       this.saveToStorage();
     },
 
-    // Set special instructions
     setSpecialInstructions(instructions: string | null) {
       this.special_instructions = instructions;
       this.saveToStorage();
