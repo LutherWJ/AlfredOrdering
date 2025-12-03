@@ -44,6 +44,7 @@ const selectItem = (item: MenuItem) => {
     <NavigationHeader
       :title="selectedGroup?.group_name || 'Menu Items'"
       :show-back="true"
+      :back-route="`/menu/${restaurantId}`"
     />
 
     <main class="max-w-2xl mx-auto px-4 py-6">

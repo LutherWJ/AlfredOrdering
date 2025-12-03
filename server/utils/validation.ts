@@ -6,6 +6,36 @@ export function isValidObjectId(id: unknown): id is string {
     return typeof id === 'string' && mongoose.Types.ObjectId.isValid(id);
 }
 
+function validateSelectedExtra(extra: unknown, path: string): string | null {
+    if (!extra || typeof extra !== 'object') {
+        return `${path} must be an object`;
+    }
+
+    const extraData = extra as Record<string, unknown>;
+
+    if (!extraData.extra_id || typeof extraData.extra_id !== 'string') {
+        return `${path}.extra_id is required and must be a string`;
+    }
+    if (!isValidObjectId(extraData.extra_id)) {
+        return `${path}.extra_id must be a valid ObjectId`;
+    }
+
+    if (extraData.extras !== undefined) {
+        if (!Array.isArray(extraData.extras)) {
+            return `${path}.extras must be an array`;
+        }
+
+        for (let i = 0; i < extraData.extras.length; i++) {
+            const nestedError = validateSelectedExtra(extraData.extras[i], `${path}.extras[${i}]`);
+            if (nestedError) {
+                return nestedError;
+            }
+        }
+    }
+
+    return null;
+}
+
 export function validateOrder(body: unknown): Result<CreateOrderRequest, string> {
     if (!body || typeof body !== 'object') {
         return err('Request body must be an object');
@@ -57,12 +87,9 @@ export function validateOrder(body: unknown): Result<CreateOrderRequest, string>
         }
 
         for (let j = 0; j < itemData.extras.length; j++) {
-            const extra = itemData.extras[j];
-            if (typeof extra !== 'string') {
-                return err(`items[${i}].extras[${j}] must be a string`);
-            }
-            if (!isValidObjectId(extra)) {
-                return err(`items[${i}].extras[${j}] must be a valid ObjectId`);
+            const validationError = validateSelectedExtra(itemData.extras[j], `items[${i}].extras[${j}]`);
+            if (validationError) {
+                return err(validationError);
             }
         }
     }

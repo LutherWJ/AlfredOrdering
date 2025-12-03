@@ -22,7 +22,7 @@ const itemId = computed(() => route.params.itemId as string)
 // Get menu from store
 const menu = computed(() => menuStore.getMenuByRestaurantId(restaurantId.value))
 
-// Find the selected item
+// Find the selected item and its group
 const selectedItem = computed<MenuItem | undefined>(() => {
   if (!menu.value) return undefined
   for (const group of menu.value.groups) {
@@ -30,6 +30,16 @@ const selectedItem = computed<MenuItem | undefined>(() => {
     if (item) return item
   }
   return undefined
+})
+
+// Find the group ID for the selected item
+const groupId = computed(() => {
+  if (!menu.value) return ''
+  for (const group of menu.value.groups) {
+    const item = group.items.find(i => i.item_id === itemId.value)
+    if (item) return group.group_id
+  }
+  return ''
 })
 
 // Filter available extras (top-level only for display)
@@ -119,6 +129,7 @@ const formatPrice = (price: number) => {
     <NavigationHeader
       :title="selectedItem?.item_name || 'Customize Item'"
       :show-back="true"
+      :back-route="`/menu/${restaurantId}/group/${groupId}`"
     />
 
     <main class="max-w-2xl mx-auto px-4 py-6">

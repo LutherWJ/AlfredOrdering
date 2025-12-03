@@ -148,7 +148,7 @@ export function processOrderItem(menu: any, orderedItem: any) {
             unit_price: menuItem.base_price,
             quantity: orderedItem.quantity,
             extras: orderExtras,
-            item_subtotal: itemTotal
+            line_subtotal: itemTotal
         },
         itemTotal
     };

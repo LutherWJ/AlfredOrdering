@@ -1,5 +1,6 @@
 import { createWebHistory, createRouter } from 'vue-router'
 import Login from "../views/Login.vue";
+import Home from "../views/Home.vue";
 import MenuSelect from "../views/MenuSelect.vue";
 import MenuGroupSelect from "../views/MenuGroupSelect.vue";
 import MenuItemSelect from "../views/MenuItemSelect.vue";
@@ -11,7 +12,8 @@ import { useAuthStore } from '../store/authStore';
 
 const routes = [
     { path: '/login', name: 'Login', component: Login },
-    { path: '/', name: 'MenuSelect', component: MenuSelect },
+    { path: '/', name: 'Home', component: Home },
+    { path: '/menus', name: 'MenuSelect', component: MenuSelect },
     { path: '/menu/:restaurantId', name: 'MenuGroupSelect', component: MenuGroupSelect },
     { path: '/menu/:restaurantId/group/:groupId', name: 'MenuItemSelect', component: MenuItemSelect },
     { path: '/menu/:restaurantId/item/:itemId', name: 'ItemExtraSelect', component: ItemExtraSelect },
@@ -40,7 +42,7 @@ router.beforeEach(async (to, from) => {
 
     // Redirect to home if already logged in and trying to access login
     if (authStore.isLoggedIn && to.name === 'Login') {
-        return { name: 'MenuSelect' }
+        return { name: 'Home' }
     }
 });
 

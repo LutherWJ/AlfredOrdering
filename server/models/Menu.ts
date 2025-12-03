@@ -29,7 +29,7 @@ const extraSchema = new mongoose.Schema({
     max_selectable: {
         type: Number,
         min: 1,
-        default: 1  // Default to 1 for radio button groups (entree, side, drink)
+        default: 1  // Default to 1 for radio button groups
     },
     display_order: {
         type: Number,
