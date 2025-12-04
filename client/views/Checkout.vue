@@ -7,10 +7,12 @@ import type { Menu, MenuItem, MenuExtra, SelectedExtra } from '../../shared/type
 import { SALES_TAX } from '../../shared/constants'
 import NavigationHeader from '../components/NavigationHeader.vue'
 import { postOrder } from '../services/orderService'
+import { useToast } from 'vue-toastification'
 
 const router = useRouter()
 const cartStore = useCartStore()
 const menuStore = useMenuStore()
+const toast = useToast()
 
 const menu = computed(() => {
   if (!cartStore.restaurant_id) return null
@@ -112,8 +114,7 @@ const submitOrder = async () => {
     // Clear cart
     cartStore.clearCart()
 
-    // Navigate back to home page to see order
-    alert(`Order placed successfully! Order #${order.order_number}`)
+    toast.success(`Order placed successfully! Order #${order.order_number}`)
     router.push('/')
   } catch (e: any) {
     console.error('Order submission failed:', e)
