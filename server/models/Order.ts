@@ -15,8 +15,6 @@ const orderExtraSchema = new mongoose.Schema({
 }, { _id: false });
 
 // Add recursive self-reference for nested extras
-// This preserves the hierarchical structure in order history
-// Example: "Entree" -> "Cheeseburger" -> "Extra Cheese"
 orderExtraSchema.add({
     extras: {
         type: [orderExtraSchema],

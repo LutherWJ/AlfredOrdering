@@ -41,7 +41,7 @@ cd AlfredOrdering
 
 ### 2. Start the application
 ```bash
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 This single command will:
@@ -59,10 +59,10 @@ Once the containers are running, access the application:
 ### 4. Verify it's running
 ```bash
 # Check container status
-docker-compose ps
+docker compose ps
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Test the API health endpoint
 curl http://localhost:3000/health
@@ -79,10 +79,10 @@ Expected response:
 ### 5. Stop the application
 ```bash
 # Stop containers (keeps data)
-docker-compose down
+docker compose down
 
 # Stop and remove all data (including database)
-docker-compose down -v
+docker compose down -v
 ```
 
 ---
@@ -106,7 +106,7 @@ The application runs in two containers:
 MongoDB data is stored in a Docker volume named `mongodb_data`, which persists even when containers are stopped. To completely remove all data, use:
 
 ```bash
-docker-compose down -v
+docker compose down -v
 ```
 
 ---
@@ -123,31 +123,31 @@ sudo lsof -i :3000
 sudo lsof -i :5173
 sudo lsof -i :27017
 
-# Stop the process or modify docker-compose.yml to use different ports
+# Stop the process or modify docker compose.yml to use different ports
 ```
 
 ### Viewing Logs
 
 ```bash
 # View all container logs
-docker-compose logs -f
+docker compose logs -f
 
 # View specific container logs
-docker-compose logs -f mongodb
-docker-compose logs -f server
+docker compose logs -f mongodb
+docker compose logs -f server
 ```
 
 ### Containers Won't Start
 
 ```bash
 # Check container status
-docker-compose ps
+docker compose ps
 
 # Restart containers
-docker-compose restart
+docker compose restart
 
 # Rebuild and restart
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### Fresh Start
@@ -155,19 +155,6 @@ docker-compose up -d --build
 To remove everything and start fresh:
 
 ```bash
-docker-compose down -v
-docker-compose up -d --build
+docker compose down -v
+docker compose up -d --build
 ```
-
----
-
-## For Developers
-
-If you're developing on this project, please refer to `CLAUDE.md` for detailed development instructions, including:
-
-- Development workflow with hot-reload
-- Available npm scripts
-- Project architecture and code structure
-- Database design patterns
-- API endpoints reference
-- Common development tasks
