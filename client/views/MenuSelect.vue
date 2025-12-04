@@ -10,7 +10,8 @@ onMounted(async () => {
   await menuStore.fetchMenus()
 })
 
-const selectMenu = (restaurantId: string) => {
+const selectMenu = (restaurantId: string, isActive: boolean) => {
+  if (!isActive) return
   router.push(`/menu/${restaurantId}`)
 }
 
@@ -55,7 +56,7 @@ const reloadPage = async () => {
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="menuStore.activeMenus.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
+      <div v-else-if="menuStore.menus.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
         <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
         </svg>
@@ -66,12 +67,28 @@ const reloadPage = async () => {
       <!-- Menu List -->
       <div v-else class="space-y-4">
         <button
-          v-for="menu in menuStore.activeMenus"
+          v-for="menu in menuStore.menus"
           :key="menu.id"
-          @click="selectMenu(menu.restaurant_id)"
-          class="w-full bg-white rounded-lg shadow-sm hover:shadow-md transition-all duration-200 p-6 text-left border border-gray-200 hover:border-blue-500 active:scale-98"
+          @click="selectMenu(menu.restaurant_id, menu.is_active)"
+          :disabled="!menu.is_active"
+          :class="[
+            'w-full bg-white rounded-lg shadow-sm transition-all duration-200 p-6 text-left border border-gray-200 relative',
+            menu.is_active
+              ? 'hover:shadow-md hover:border-blue-500 active:scale-98 cursor-pointer'
+              : 'opacity-75'
+          ]"
         >
-          <div class="flex items-start justify-between">
+          <!-- Closed Overlay -->
+          <div
+            v-if="!menu.is_active"
+            class="absolute inset-0 bg-gray-600 bg-opacity-60 rounded-lg flex items-center justify-center z-20"
+          >
+            <div class="bg-red-600 text-white px-6 py-3 rounded-lg font-bold text-lg shadow-lg">
+              CLOSED
+            </div>
+          </div>
+
+          <div class="flex items-start justify-between relative z-10">
             <div class="flex-1">
               <h2 class="text-xl font-bold text-gray-900 mb-2">
                 {{ menu.restaurant_name }}

@@ -18,25 +18,23 @@ const restaurantId = computed(() => route.params.restaurantId as string)
 // Get menu from store
 const menu = computed(() => menuStore.getMenuByRestaurantId(restaurantId.value))
 
-// Filter and sort active groups
-const activeGroups = computed(() => {
+// Sort all groups (including inactive)
+const sortedGroups = computed(() => {
   if (!menu.value) return []
   return menu.value.groups
-    .filter(group => group.is_active)
     .sort((a, b) => a.display_order - b.display_order)
 })
 
 onMounted(async () => {
-  // Fetch menu from store (will use cache if available)
   const fetchedMenu = await menuStore.fetchMenuByRestaurantId(restaurantId.value)
 
   if (fetchedMenu) {
-    // Set restaurant in cart store
     cartStore.setRestaurant(fetchedMenu.restaurant_id)
   }
 })
 
 const selectGroup = (group: MenuGroup) => {
+  if (!group.is_active) return
   router.push(`/menu/${restaurantId.value}/group/${group.group_id}`)
 }
 </script>
@@ -75,24 +73,39 @@ const selectGroup = (group: MenuGroup) => {
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="activeGroups.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
+      <div v-else-if="sortedGroups.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
         <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
         </svg>
         <h2 class="text-xl font-semibold text-gray-900 mb-2">No Categories Available</h2>
-        <p class="text-gray-600">This menu has no active categories at the moment</p>
+        <p class="text-gray-600">This menu has no categories at the moment</p>
       </div>
 
       <!-- Menu Groups List -->
       <div v-else class="space-y-3">
         <p class="text-sm text-gray-600 mb-4">Select a category to view items</p>
-        <SelectionCard
-          v-for="group in activeGroups"
+        <div
+          v-for="group in sortedGroups"
           :key="group.group_id"
-          :title="group.group_name"
-          :subtitle="`${group.items.length} items`"
-          @click="selectGroup(group)"
-        />
+          class="relative"
+        >
+          <!-- Unavailable Overlay -->
+          <div
+            v-if="!group.is_active"
+            class="absolute inset-0 bg-gray-900 bg-opacity-60 rounded-lg flex items-center justify-center z-10"
+          >
+            <div class="bg-gray-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg">
+              UNAVAILABLE
+            </div>
+          </div>
+
+          <SelectionCard
+            :title="group.group_name"
+            :subtitle="`${group.items.length} items`"
+            :class="{ 'opacity-75': !group.is_active, 'cursor-not-allowed': !group.is_active }"
+            @click="selectGroup(group)"
+          />
+        </div>
       </div>
     </main>
 

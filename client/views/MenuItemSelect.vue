@@ -23,18 +23,19 @@ const selectedGroup = computed<MenuGroup | undefined>(() => {
   return menu.value.groups.find(g => g.group_id === groupId.value)
 })
 
-// Filter available items
-const availableItems = computed(() => {
+// Get all items (including unavailable)
+const allItems = computed(() => {
   if (!selectedGroup.value) return []
-  return selectedGroup.value.items.filter(item => item.is_available)
+  return selectedGroup.value.items
 })
 
 onMounted(async () => {
-  // Fetch menu from store (will use cache if available)
+  // Fetch menu from store
   await menuStore.fetchMenuByRestaurantId(restaurantId.value)
 })
 
 const selectItem = (item: MenuItem) => {
+  if (!item.is_available) return
   router.push(`/menu/${restaurantId.value}/item/${item.item_id}`)
 }
 </script>
@@ -70,33 +71,48 @@ const selectItem = (item: MenuItem) => {
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="availableItems.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
+      <div v-else-if="allItems.length === 0" class="bg-white rounded-lg shadow-sm p-8 text-center">
         <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
         </svg>
         <h2 class="text-xl font-semibold text-gray-900 mb-2">No Items Available</h2>
-        <p class="text-gray-600">This category has no available items at the moment</p>
+        <p class="text-gray-600">This category has no items at the moment</p>
       </div>
 
       <!-- Menu Items List -->
       <div v-else class="space-y-3">
-        <SelectionCard
-          v-for="item in availableItems"
+        <div
+          v-for="item in allItems"
           :key="item.item_id"
-          :title="item.item_name"
-          :subtitle="item.description"
-          :image-url="item.image_url"
-          :price="item.base_price"
-          :is-available="item.is_available"
-          :is-vegetarian="item.is_vegetarian"
-          :is-vegan="item.is_vegan"
-          :is-gluten-free="item.is_gluten_free"
-          @click="selectItem(item)"
+          class="relative"
         >
-          <div v-if="item.extras.length > 0" class="mt-2">
-            <span class="text-xs text-gray-500">{{ item.extras.length }} customization{{ item.extras.length !== 1 ? 's' : '' }} available</span>
+          <!-- Unavailable Overlay -->
+          <div
+            v-if="!item.is_available"
+            class="absolute inset-0 bg-gray-600 bg-opacity-60 rounded-lg flex items-center justify-center z-10"
+          >
+            <div class="bg-gray-600 text-white px-4 py-2 rounded-lg font-bold text-sm shadow-lg">
+              UNAVAILABLE
+            </div>
           </div>
-        </SelectionCard>
+
+          <SelectionCard
+            :title="item.item_name"
+            :subtitle="item.description"
+            :image-url="item.image_url"
+            :price="item.base_price"
+            :is-available="item.is_available"
+            :is-vegetarian="item.is_vegetarian"
+            :is-vegan="item.is_vegan"
+            :is-gluten-free="item.is_gluten_free"
+            :class="{ 'opacity-75': !item.is_available, 'cursor-not-allowed': !item.is_available }"
+            @click="selectItem(item)"
+          >
+            <div v-if="item.extras.length > 0" class="mt-2">
+              <span class="text-xs text-gray-500">{{ item.extras.length }} customization{{ item.extras.length !== 1 ? 's' : '' }} available</span>
+            </div>
+          </SelectionCard>
+        </div>
       </div>
     </main>
 
